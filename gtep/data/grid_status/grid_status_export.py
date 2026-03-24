@@ -4,7 +4,7 @@ from gridstatusio import GridStatusClient
 import dataset_info
 
 # Creating API Client
-client = GridStatusClient(api_key="CHANGEME")
+client = GridStatusClient(api_key="81eb9f596a2e4abb9d256a7287a6b668")
 
 # safety limit
 QUERY_LIMIT = 10_000
