@@ -419,3 +419,5 @@ ERCOT_datasets = {
         "time_periods_exported": ["1/26"],
     },
 }
+
+# first month was 31,885,433 rows (20,289,615 for Caiso) (19877 are 1 time exports)
