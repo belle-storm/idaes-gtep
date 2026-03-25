@@ -1,7 +1,7 @@
 # Prioritized Datasets
 from datetime import datetime
 
-CAISO_datasets = {
+CAISO_datasets = {  # 20,289,615 rows for a month
     "caiso_fuel_regions": {
         "columns": {
             "name": [
@@ -16,7 +16,9 @@ CAISO_datasets = {
             "type": [str, str, str, str, bool, str, str],
         },
         "est_rows": 180,
+        "1_month_rows": 184,
         "frequency": None,
+        "time_periods_exported": "All",
     },
     "caiso_storage": {
         "columns": {
@@ -30,7 +32,9 @@ CAISO_datasets = {
             "type": [datetime, datetime, int, int, int],
         },
         "est_rows": 310000,
+        "1_month_rows": 8640,
         "frequency": "5 min",
+        "time_periods_exported": ["1/26"],
     },
     "caiso_renewables_hourly": {
         "columns": {
@@ -44,7 +48,9 @@ CAISO_datasets = {
             "type": [datetime, datetime, str, float, float],
         },
         "est_rows": 140000,
+        "1_month_rows": 2876,
         "frequency": "hourly",
+        "time_periods_exported": ["1/26"],
     },
     "caiso_fuel_mix": {
         "columns": {
@@ -84,7 +90,9 @@ CAISO_datasets = {
             ],
         },
         "est_rows": 840000,
+        "1_month_rows": 8640,
         "frequency": "5 min",
+        "time_periods_exported": ["1/26"],
     },
     "caiso_load": {
         "columns": {
@@ -96,7 +104,9 @@ CAISO_datasets = {
             ],
         },
         "est_rows": 830000,
+        "1_month_rows": 8640,
         "frequency": "5 min",
+        "time_periods_exported": ["1/26"],
     },
     "caiso_load_forecast_2_day": {
         "columns": {
@@ -110,7 +120,9 @@ CAISO_datasets = {
             "type": [datetime, datetime, datetime, str, float],
         },
         "est_rows": 2200000,
+        "1_month_rows": 24480,  # included all vintages
         "frequency": "hourly",
+        "time_periods_exported": ["1/26"],
     },
     "caiso_lmp_real_time_5_min": {
         "columns": {
@@ -140,7 +152,9 @@ CAISO_datasets = {
             ],
         },
         "est_rows": 11000000000,
+        "1_month_rows": 10000000,
         "frequency": "5 min",
+        "time_periods_exported": ["1/26"],
     },
     "caiso_lmp_day_ahead_hourly": {
         "columns": {
@@ -168,7 +182,9 @@ CAISO_datasets = {
             ],
         },
         "est_rows": 870000000,
+        "1_month_rows": 10000000,
         "frequency": "hourly",
+        "time_periods_exported": ["1/26"],
     },
     "caiso_system_load_and_resource_schedules_day_ahead": {
         "columns": {
@@ -184,7 +200,9 @@ CAISO_datasets = {
             "type": [datetime, datetime, str, float, float, float, float],
         },
         "est_rows": 760000,
+        "1_month_rows": 4320,
         "frequency": "hourly",
+        "time_periods_exported": ["1/26"],
     },
     "caiso_system_load_and_resource_schedules_real_time_5_min": {
         "columns": {
@@ -200,7 +218,9 @@ CAISO_datasets = {
             "type": [datetime, datetime, str, float, float, float, float],
         },
         "est_rows": 21000000,
+        "1_month_rows": 231835,
         "frequency": "5 min",
+        "time_periods_exported": ["1/26"],
     },
 }
 
@@ -211,7 +231,9 @@ ERCOT_datasets = {
             "type": [datetime, datetime, int],
         },
         "est_rows": 1300000,
+        "1_month_rows": 8628,
         "frequency": "5 min",
+        "time_periods_exported": ["1/26"],
     },
     "ercot_load_forecast": {
         "columns": {
@@ -224,7 +246,9 @@ ERCOT_datasets = {
             "type": [datetime, datetime, datetime, float],
         },
         "est_rows": 1100000,
+        "1_month_rows": 8640,  # included all vintages
         "frequency": "5 min",
+        "time_periods_exported": ["1/26"],
     },
     "ercot_capacity_forecast": {
         "columns": {
@@ -238,7 +262,9 @@ ERCOT_datasets = {
             "type": [datetime, datetime, datetime, int, float],
         },
         "est_rows": 29000000,
+        "1_month_rows": 1231223,  # all vintages
         "frequency": "5 min",
+        "time_periods_exported": ["1/26"],
     },
     "ercot_capacity_committed": {
         "columns": {
@@ -246,12 +272,16 @@ ERCOT_datasets = {
             "type": [datetime, datetime, int],
         },
         "est_rows": 210000,
+        "1_month_rows": 8627,
         "frequency": "5 min",
+        "time_periods_exported": ["1/26"],
     },
     "ercot_electrical_buses": {
         "columns": {"name": ["location", "location_type"], "type": [str, str]},
         "est_rows": 19000,
+        "1_month_rows": 19056,
         "frequency": None,
+        "time_periods_exported": "all",
     },
     "ercot_fuel_mix": {
         "columns": {
@@ -281,49 +311,25 @@ ERCOT_datasets = {
             ],
         },
         "est_rows": 970000,
+        "1_month_rows": 8609,
         "frequency": "5 min",
-    },
-    "ercot_fuel_mix_instantaneous": {
-        "columns": {
-            "name": [
-                "time_utc",
-                "coal_and_lignite",
-                "hydro",
-                "nuclear",
-                "power_storage",
-                "solar",
-                "wind",
-                "natural_gas",
-                "other",
-            ],
-            "type": [
-                datetime,
-                float,
-                float,
-                float,
-                float,
-                float,
-                float,
-                float,
-                float,
-            ],
-        },
-        "est_rows": 300000,
-        "frequency": "5 min",
+        "time_periods_exported": ["1/26"],
     },
     "ercot_gen_resources": {
         "columns": {
             "name": [
                 "resource_name",
                 "resource_type",
-                "qse",  # seems empty
-                "dme",  # seems empty
+                # "qse",  # seems empty
+                # "dme",  # seems empty
                 "settlement_point_name",
             ],
             "type": [str, str, str, str, str],
         },
         "est_rows": 640,
+        "1_month_rows": 637,
         "frequency": None,
+        "time_periods_exported": "all",
     },
     "ercot_lmp_by_bus": {
         "columns": {
@@ -337,7 +343,9 @@ ERCOT_datasets = {
             "type": [datetime, str, str, str, float],
         },
         "est_rows": 11000000000,
+        "1_month_rows": 10000000,
         "frequency": "5 min",
+        "time_periods_exported": ["1/26"],
     },
     "ercot_solar_actual_and_forecast_hourly": {
         "columns": {
@@ -354,7 +362,9 @@ ERCOT_datasets = {
             "type": [datetime, datetime, datetime, float, float, float, float, float],
         },
         "est_rows": 16000000,
+        "1_month_rows": 155199,  # all vintages
         "frequency": "hourly",
+        "time_periods_exported": ["1/26"],
     },
     "ercot_wind_actual_and_forecast_hourly": {
         "columns": {
@@ -404,6 +414,8 @@ ERCOT_datasets = {
             ],
         },
         "est_rows": 15000000,
+        "1_month_rows": 155199,  # all vintages
         "frequency": "hourly",
+        "time_periods_exported": ["1/26"],
     },
 }
