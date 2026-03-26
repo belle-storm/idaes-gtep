@@ -418,6 +418,60 @@ ERCOT_datasets = {
         "frequency": "hourly",
         "time_periods_exported": ["1/26"],
     },
+    "ercot_resource_node_to_unit": {
+        "columns": {
+            "name": [
+                "publish_date",
+                "resource_node",
+                "unit_substation",
+                "unit_name",
+            ],
+            "type": [
+                datetime,
+                str,
+                str,
+                str,
+            ],
+        },
+        "est_rows": 11000,
+        "1_month_rows": 6336,  # all vintages
+        "frequency": None,
+        "time_periods_exported": ["2/26"],
+    },
+    "ercot_settlement_points_electrical_bus_mapping": {
+        "columns": {
+            "name": [
+                "publish_date",
+                "electrical_bus",
+                "node_name",
+                "psse_bus_name",
+                "voltage_level",
+                "substation",
+                "settlement_load_zone",
+                "resource_node",  # load zone for settlement points
+                "hub_bus_name",
+                "hub",
+                "psse_bus_number",
+            ],
+            "type": [
+                datetime,
+                str,
+                str,
+                str,
+                float,
+                str,
+                str,
+                str,
+                str,
+                str,
+                int,
+            ],
+        },
+        "est_rows": 130000,
+        "1_month_rows": 75977,  # all vintages
+        "frequency": None,  # updates weekly potentially
+        "time_periods_exported": ["2/26"],
+    },
 }
 
-# first month was 31,885,433 rows (20,289,615 for Caiso) (19877 are 1 time exports)
+# first month was 31,967,746 rows (20,289,615 for Caiso) (102210 are 1 time exports)
