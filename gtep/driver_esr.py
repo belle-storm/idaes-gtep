@@ -21,7 +21,7 @@ from gtep.gtep_solution import ExpansionPlanningSolution
 from gtep.gtep_data_processing import DataProcessing
 
 # Add data
-data_path = "./data/5bus"
+data_path = "./gtep/data/5bus"
 data_object = ExpansionPlanningData()
 data_object.load_prescient(data_path)
 
