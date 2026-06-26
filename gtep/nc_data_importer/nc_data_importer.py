@@ -1,8 +1,8 @@
 import netCDF4 as nc
 import json
 import numpy.ma as ma
-import pandas as pd
 from datetime import datetime, timedelta
+import gtep.nc_data_importer.data_skeleton as data_skeleton
 
 
 def read_nc(file):
@@ -40,8 +40,53 @@ def read_nc(file):
     return data, metadata_dict
 
 
+def _get_basetime(time_string):
+    # grab the start date from the metadata string
+    for i, char in enumerate(time_string):
+        if char.isdigit():
+            return time_string[:i], time_string[i:]
+
+
+def _get_snapshot_time(start_time: datetime = None, hours_since: int = 0):
+    """
+    Convert the snapshots data into the full datetime
+    by combining the time and the hours since that time
+    """
+    if start_time is None:
+        start_time = datetime("2020-01-01 00:00:00")
+
+    target_time = start_time + timedelta(hours=int(hours_since))
+    return target_time
+
+
+def get_start_end(
+    time_data: list[int], time_string: str, num_days: int = None
+) -> tuple[datetime, datetime]:
+    # grab the base datetime from the metadata string
+    _, start_date_string = _get_basetime(time_string)
+    date_format = "%Y-%m-%d %H:%M:%S"
+    dt_object = datetime.strptime(start_date_string, date_format)
+
+    # grab the starting datetime (hours since basetime)
+    start_time = _get_snapshot_time(dt_object, time_data[0])
+
+    if num_days is None:
+        hours = time_data[-1]
+    else:
+        ind = num_days * 24  # convert days to hours
+        hours = time_data[ind]
+    end_time = _get_snapshot_time(dt_object, hours)
+
+    return start_time, end_time
+
+
 file = r"./gtep/data/nc_data/base_s_50_elec.nc"
 
 data, metadata = read_nc(file)
+
+start_time, end_time = get_start_end(
+    data["snapshots_snapshot"],
+    metadata["variables_metadata"]["snapshots_snapshot"]["units"],
+)
 
 pass
