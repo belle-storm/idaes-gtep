@@ -20,13 +20,14 @@ from pyomo.contrib.appsi.solvers.gurobi import Gurobi
 import gurobipy as gp
 import pyomo.environ as pyo
 
-data_path = "./data/5bus_jsc"
-data_object = ExpansionPlanningData()
+# data_path = "./gtep/data/5bus_jsc"
+data_path = "./gtep/data/9_bus_GTEP_dir"
+data_object = ExpansionPlanningData(
+    stages=2, num_reps=2, len_reps=1, num_commit=6, num_dispatch=2
+)
 data_object.load_prescient(data_path)
 
-mod_object = ExpansionPlanningModel(
-    stages=2, data=data_object.md, num_reps=2, len_reps=1, num_commit=6, num_dispatch=2
-)
+mod_object = ExpansionPlanningModel(data=data_object)
 mod_object.create_model()
 TransformationFactory("gdp.bound_pretransformation").apply_to(mod_object.model)
 TransformationFactory("gdp.bigm").apply_to(mod_object.model)

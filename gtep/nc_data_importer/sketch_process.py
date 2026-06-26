@@ -3,7 +3,6 @@ import json
 import numpy.ma as ma
 import pandas as pd
 from datetime import datetime, timedelta
-import egret.data.model_data as md
 
 
 def _get_basetime(time_string):
@@ -25,27 +24,25 @@ def _get_snapshot_time(start_time: datetime = None, hours_since: int = 0):
     return target_time
 
 
-def _create_skeleton():
-    model_data = md.ModelData.empty_model_data_dict()
-    elements = model_data["elements"]
-    system = model_data["system"]
+def get_start_end(
+    time_data: list[int], time_string: str, num_days: int = None
+) -> tuple[datetime, datetime]:
+    # grab the base datetime from the metadata string
+    _, start_date_string = _get_basetime(time_string)
+    date_format = "%Y-%m-%d %H:%M:%S"
+    dt_object = datetime.strptime(start_date_string, date_format)
 
-    system["name"] = "NC"
-    system["baseMVA"] = None  # FIXME update with new default
+    # grab the starting datetime (hours since basetime)
+    start_time = _get_snapshot_time(dt_object, time_data[0])
 
+    if num_days is None:
+        hours = time_data[-1]
+    else:
+        ind = num_days * 24  # convert days to hours
+        hours = time_data[ind]
+    end_time = _get_snapshot_time(dt_object, hours)
 
-def _add_buses(data_file, elements, system):
-    elements["bus"] = {}
-    elements["load"] = {}
-    elements["shunt"] = {}
-
-
-def _add_branches():
-    pass
-
-
-def _add_generators():
-    pass
+    return start_time, end_time
 
 
 def _read_metadata():
@@ -163,6 +160,29 @@ def _populate_with_forecastable_data(
 # finish the rest of the prescient workflow (identify how much is needed)
 
 
+def _build_rep_dates(md, dates, weights, num_days, stages, period_per_step):
+    if weights is None:
+        # set the weight for each day to the total weight divided by number of days
+        total_weight = num_days * stages
+        weight_per_date = int(total_weight / (len(dates)))
+        representative_weights = {
+            key: weight_per_date for date, key in enumerate(dates)
+        }
+
+    time_keys = md.data["system"]["time_keys"]
+
+    data_list = []
+
+    for date in dates:
+        key_idx = time_keys.index(date)
+        time_key_set = time_keys[key_idx : key_idx + period_per_step]
+        data_list.append(md.clone_at_time_keys(time_key_set))
+
+    representative_data = data_list
+
+    return representative_weights, representative_data
+
+
 # ---------------------------------------------------#
 def list_sections(file):
     ds = nc.Dataset(file)
@@ -218,17 +238,9 @@ if __name__ == "__main__":
 
     data, metadata = read_nc(file)
 
-    # grab the base datetime from the metadata string
-    time_string = metadata["variables_metadata"]["snapshots_snapshot"]["units"]
-    _, start_date_string = _get_basetime(time_string)
-    date_format = "%Y-%m-%d %H:%M:%S"
-    dt_object = datetime.strptime(start_date_string, date_format)
-
-    # grab the starting datetime (hours since basetime)
-    time_data = data["snapshots_snapshot"]
-    start_time = _get_snapshot_time(dt_object, time_data[0])
-    end_time = _get_snapshot_time(
-        dt_object, time_data[-1]
-    )  # needs to be based on the number of days in the options set (default 365)
+    start, end = get_start_end(
+        data["snapshots_snapshot"],
+        metadata["variables_metadata"]["snapshots_snapshot"]["units"],
+    )
 
     pass
