@@ -40,6 +40,19 @@ def read_nc(file):
     return data, metadata_dict
 
 
+def group_data(data):
+    groups = []
+    for item in data.keys():
+        prefix = None
+        for i, char in enumerate(item):
+            if char == "_":
+                prefix = item[:i], item[i:]
+        if prefix is None:
+            prefix = item
+        if prefix not in groups:
+            groups.append(prefix)
+
+
 def _get_basetime(time_string):
     # grab the start date from the metadata string
     for i, char in enumerate(time_string):
