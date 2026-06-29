@@ -41,16 +41,17 @@ def read_nc(file):
 
 
 def group_data(data):
-    groups = []
-    for item in data.keys():
-        prefix = None
-        for i, char in enumerate(item):
-            if char == "_":
-                prefix = item[:i], item[i:]
-        if prefix is None:
-            prefix = item
+    groups = {}
+    for item, val in data.items():
+        parts = item.split("_", 1)
+        if len(parts) > 1:
+            prefix = parts[0]
+        else:
+            prefix = parts[0]
         if prefix not in groups:
-            groups.append(prefix)
+            groups[prefix] = {}
+        groups[prefix][parts[-1]] = val
+    return groups
 
 
 def _get_basetime(time_string):
@@ -93,6 +94,126 @@ def get_start_end(
     return start_time, end_time
 
 
+def add_storage_data(elements, storage_data):
+
+    for i, name in enumerate(storage_data["i"]):
+        storage_dict = {}
+        storage_dict["bus"] = storage_data["bus"][i]
+        storage_dict["generator"] = None
+        storage_dict["storage_type"] = storage_data["carrier"][i]
+        storage_dict["energy_capacity"] = None
+        storage_dict["initial_state_of_charge"] = None
+        storage_dict["end_state_of_charge"] = None
+        storage_dict["minimum_state_of_charge"] = None
+        storage_dict["charge_efficiency"] = None
+        storage_dict["discharge_efficiency"] = None
+        storage_dict["max_discharge_rate"] = None
+        storage_dict["min_discharge_rate"] = None
+        storage_dict["max_charge_rate"] = None
+        storage_dict["min_charge_rate"] = None
+        storage_dict["initial_charge_rate"] = None
+        storage_dict["initial_discharge_rate"] = None
+        storage_dict["charge_cost"] = None
+        storage_dict["discharge_cost"] = None
+        storage_dict["retention_rate_60min"] = None
+        storage_dict["ramp_up_input_60min"] = None
+        storage_dict["ramp_down_input_60min"] = None
+        storage_dict["ramp_up_output_60min"] = None
+        storage_dict["ramp_down_output_60min"] = None
+        storage_dict["in_service"] = True
+        storage_dict["capital_multiplier"] = None
+        storage_dict["extension_multiplier"] = None
+        storage_dict["investment_cost"] = storage_data["capital_cost"][i]
+        storage_dict["investment_cost_kwh"] = None
+
+        # included in data but no match here
+        storage_dict["e_nom_extendable"] = bool(storage_data["e_nom_extendable"][i])
+        storage_dict["e_cyclic"] = bool(storage_data["e_cyclic"][i])
+        storage_dict["lifetime"] = storage_data["lifetime"][i]
+
+        elements[name] = storage_dict
+
+
+def add_buses(buses, bus_data):
+    for i, bus_name in enumerate(bus_data["i"]):
+        bus_dict = {}
+        bus_dict["id"] = bus_name
+        bus_dict["base_kv"] = None
+        bus_dict["matpower_bustype"] = bus_data["control"][i]
+        bus_dict["vm"] = None
+        bus_dict["va"] = None
+        bus_dict["v_min"] = None
+        bus_dict["v_max"] = None
+        bus_dict["area"] = bus_data["location"][i]
+        bus_dict["zone"] = bus_data["country"][i]
+
+        # included in data but seemingly no match here
+        bus_dict["v_nom"] = bus_data["v_nom"][i]
+        bus_dict["x"] = bus_data["x"][i]
+        bus_dict["y"] = bus_data["y"][i]
+        bus_dict["carrier"] = bus_data["carrier"][i]
+        bus_dict["sub_network"] = bus_data["sub_network"][i]
+        bus_dict["substation_lv"] = bus_data["substation_lv"][i]
+        bus_dict["substation_off"] = bus_data["substation_off"][i]
+
+        buses[bus_name] = bus_dict
+
+
+def add_branches(branches, dc_branch, branch_data):
+
+    for ind, branch_name in enumerate(branch_data["i"]):
+        if branch_data["carrier"][ind] != "DC":
+            branch_dict = {}
+            branch_dict["from_bus"] = branch_data["bus0"][ind]
+            branch_dict["to_bus"] = branch_data["bus1"][ind]
+            branch_dict["in_service"] = None
+            branch_dict["resistance"] = None
+            branch_dict["reactance"] = None
+            branch_dict["charging_susceptance"] = None
+            branch_dict["rating_long_term"] = None
+            branch_dict["rating_short_term"] = None
+            branch_dict["rating_emergency"] = None
+            branch_dict["angle_diff_min"] = None
+            branch_dict["angle_diff_max"] = None
+            branch_dict["pf"] = None
+            branch_dict["qf"] = None
+            branch_dict["pt"] = None
+            branch_dict["qt"] = None
+            branch_dict["branch_type"] = branch_data["carrier"][ind]
+            branch_dict["loss_rate"] = branch_data["efficiency"][ind]
+            branch_dict["distance"] = branch_data["length"][ind]
+            branch_dict["capital_cost"] = branch_data["capital_cost"][ind]
+            branch_dict["capital_multiplier"] = None
+            branch_dict["extension_multiplier"] = None
+
+            # included in data but seemingly no match here
+            branch_dict["p_nom"] = branch_data["p_nom"][ind]
+            branch_dict["p_nom_extendable"] = bool(branch_data["p_nom_extendable"][ind])
+            branch_dict["p_min_pu"] = branch_data["p_min_pu"][ind]
+            branch_dict["lifetime"] = branch_data["lifetime"][ind]
+            branch_dict["underground"] = bool(branch_data["underground"][ind])
+            branch_dict["underwater_fraction"] = branch_data["underwater_fraction"][ind]
+            branch_dict["under_construction"] = bool(
+                branch_data["under_construction"][ind]
+            )
+            branch_dict["geometry"] = branch_data["geometry"][ind]
+            branch_dict["dc"] = branch_data["dc"][ind]
+            branch_dict["tags"] = branch_data["tags"][ind]
+
+            branches[branch_name] = branch_dict
+
+        else:
+            # dc branch
+            dc_branch_dict = {}
+            dc_branch_dict["from_bus"] = branch_data["bus0"][ind]
+            dc_branch_dict["to_bus"] = branch_data["bus1"][ind]
+            dc_branch_dict["rating_short_term"] = None
+            dc_branch_dict["rating_long_term"] = None
+            dc_branch_dict["rating_emergency"] = None
+
+            dc_branch[branch_name] = branch_dict
+
+
 file = r"./gtep/data/nc_data/base_s_50_elec.nc"
 
 data, metadata = read_nc(file)
@@ -101,5 +222,10 @@ start_time, end_time = get_start_end(
     data["snapshots_snapshot"],
     metadata["variables_metadata"]["snapshots_snapshot"]["units"],
 )
+
+groups = group_data(data)
+
+model_data = data_skeleton.create_skeleton()
+
 
 pass
