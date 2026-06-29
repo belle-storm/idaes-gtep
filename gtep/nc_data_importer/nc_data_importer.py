@@ -214,6 +214,87 @@ def add_branches(branches, dc_branch, branch_data):
             dc_branch[branch_name] = branch_dict
 
 
+def add_gens(gens, gen_data, carrier_data):
+    for ind, gen_name in enumerate(gen_data["i"]):
+        gen_dict = {}
+        gen_dict["bus"] = gen_data["bus"][ind]
+        gen_dict["in_service"] = True
+        gen_dict["mbase"] = None
+        gen_dict["pg"] = None
+        gen_dict["gg"] = None
+        gen_dict["p_min"] = gen_data["p_nom_min"][ind]
+        gen_dict["p_max"] = gen_data["p_nom_max"][ind]
+        gen_dict["q_min"] = None
+        gen_dict["q_max"] = None
+        gen_dict["ramp_q"] = None
+        gen_dict["fuel"] = gen_data["carrier"][ind]
+        gen_dict["unit_type"] = None
+        gen_dict["area"] = None
+        gen_dict["zone"] = None
+        gen_dict["generator_type"] = None
+        gen_dict["p_fuel"] = None
+        gen_dict["startup_fuel"] = None
+        gen_dict["non_fuel_startup_cost"] = None
+        gen_dict["shutdown_cost"] = None
+        gen_dict["agc_capable"] = None
+        gen_dict["p_min_agc"] = None
+        gen_dict["p_max_agc"] = None
+        gen_dict["ramp_agc"] = None
+        gen_dict["ramp_up_60min"] = None
+        gen_dict["ramp_down_60min"] = None
+        gen_dict["fuel_cost"] = None
+        gen_dict["p_cost"] = gen_data["marginal_cost"][ind]
+        gen_dict["startup_capacity"] = None
+        gen_dict["shutdown_capacity"] = None
+        gen_dict["min_up_time"] = None
+        gen_dict["min_down_time"] = None
+        gen_dict["initial_status"] = None
+        gen_dict["initial_p_output"] = None
+        gen_dict["initial_q_output"] = None
+        gen_dict["lifetime"] = gen_data["lifetime"][ind]
+        gen_dict["spinning_reserve_frac"] = None
+        gen_dict["quickstart_reserve_frac"] = None
+        gen_dict["capital_multiplier"] = None
+        gen_dict["extension_multiplier"] = None
+        gen_dict["max_operating_reserve"] = None
+        gen_dict["max_spinning_reserve"] = None
+        gen_dict["max_quickstart_reserve"] = None
+        gen_dict["ramp_up_rate"] = None
+        gen_dict["ramp_down_rate"] = None
+        carrier_ind = carrier_data["i"].index(gen_data["carrier"][ind])
+        gen_dict["emissions_factor"] = carrier_data["co2_emissions"][carrier_ind]
+        gen_dict["start_fuel"] = None
+        gen_dict["investment_cost"] = gen_data["capital_cost"][ind]
+
+        # included in data but seemingly no match here
+        gen_dict["p_nom"] = gen_dict["p_nom"][ind]
+        gen_dict["p_nom_extendable"] = bool(gen_dict["p_nom_extendable"][ind])
+        gen_dict["p_max_pu"] = gen_dict["p_max_pu"][ind]
+        gen_dict["efficiency"] = gen_dict["efficiency"][ind]
+        gen_dict["weight"] = gen_dict["weight"][ind]
+        gen_dict["t_p_max_pu_i"] = gen_dict["t_p_max_pu_i"][ind]
+        gen_dict["t_p_max_pu"] = gen_dict["t_p_max_pu"][ind]
+
+        gens[gen_name] = gen_dict
+
+
+def add_loads(loads, buses, load_data):
+    for ind, load_name in enumerate(load_data["i"]):
+        load_dict = {}
+        load_dict["bus"] = load_data["bus"][ind]
+        load_dict["in_service"] = True
+        load_dict["p_load"] = {}
+        load_dict["q_load"] = {}
+        load_dict["area"] = buses[load_name]["area"]
+        load_dict["zone"] = buses[load_name]["zone"]
+
+        # included in data but seemingly no match here
+        load_dict["t_p_set_i"] = load_data["t_p_set_i"][ind]
+        load_dict["t_p_set"] = load_data["t_p_set"][ind]
+
+        loads[load_name] = load_dict
+
+
 file = r"./gtep/data/nc_data/base_s_50_elec.nc"
 
 data, metadata = read_nc(file)
