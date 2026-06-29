@@ -18,6 +18,28 @@ class NCExpansionPlanningData(ExpansionPlanningData):
 
         self.data_type = "nc_data"
 
+    def _build_rep_dates(md, dates, weights, num_days, stages, period_per_step):
+        if weights is None:
+            # set the weight for each day to the total weight divided by number of days
+            total_weight = num_days * stages
+            weight_per_date = int(total_weight / (len(dates)))
+            representative_weights = {
+                key: weight_per_date for date, key in enumerate(dates)
+            }
+
+        time_keys = md.data["system"]["time_keys"]
+
+        data_list = []
+
+        for date in dates:
+            key_idx = time_keys.index(date)
+            time_key_set = time_keys[key_idx : key_idx + period_per_step]
+            data_list.append(md.clone_at_time_keys(time_key_set))
+
+        representative_data = data_list
+
+        return representative_weights, representative_data
+
     def load_nc_data(self, nc_file, options_dict=None):
 
         if options_dict is None:
