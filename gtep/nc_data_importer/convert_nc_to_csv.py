@@ -19,7 +19,7 @@ def save_csv(df, file_name):
     df.to_csv(file_name, index=False, header=True)
 
 
-def bus_df(bus_data):
+def bus_df(bus_data, load_data):
     # save bus data as in csv friendly dataframe
     num_bus = len(bus_data["i"])
 
@@ -43,9 +43,46 @@ def bus_df(bus_data):
         "substation_off": bus_data["substation_off"],
     }
 
-    bus_df = pd.DataFrame(bus_dict)
+    num_load_bus = len(load_data['i'])
 
-    return bus_df
+    loads_dict = {
+        'bus_name': load_data['i'],
+        'bus': load_data['bus'],
+        'in_service': [True] * num_load_bus,
+        # 'p_load'
+        # 'data_type'
+        # 'values'
+        # 'q_load'
+        # 'data_type'
+        # 'values'
+        'area':[],
+        'zone':[],
+    }
+    p_load = {}
+    q_load = {}
+
+    for ix, name in enumerate(load_data['i']):
+        bus_idx = bus_data['i'].index(name)
+        #assign to dictionary
+        loads_dict['bus_name'].append(name)
+        loads_dict['bus'].append(load_data['bus'][ix])
+        loads_dict['in_service'].append(True)
+        loads_dict['area'].append(bus_data["location"][bus_idx])
+        loads_dict['zone'].append(bus_data["country"][bus_idx])
+        #sve p_load
+        if name in load_data['t_p_set_i']:
+            p_load_ix = load_data['t_p_set_i'].index(name)
+            p_load[name] = load_data['t_p_set'][p_load_ix]
+        q_load[name] = [np.nan]
+
+    #TODO update bus read function
+
+    bus_df = pd.DataFrame(bus_dict)
+    load_df = pd.DataFrame(loads_dict)
+    p_load_df = pd.DataFrame(p_load)
+    q_load_df= pd.DataFrame(q_load)
+
+    return bus_df, load_df, p_load_df, q_load_df
 
 
 def branch_df(links, lines):
@@ -311,7 +348,7 @@ if __name__ == "__main__":
 
     file = r"./gtep/data/nc_data/base_s_50_elec.nc"
     groups, metadata = _load_data_file(file)
-    bus_df = bus_df(groups["buses"])
+    bus_df, load_df, p_load_df, q_load_df = bus_df(groups["buses"])
     branch_df, dc_branch_df = branch_df(groups['links'], groups['lines'])
     gen_df, p_fuel_df, p_cost_df = gen_df(groups['generators'], groups['carriers'])
     storage_df = storage_df(groups['storage'], max(groups['snapshots']['snapshot']))
