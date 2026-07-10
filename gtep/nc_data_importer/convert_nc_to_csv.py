@@ -147,6 +147,7 @@ def branch_df(links, lines):
 
     return branch_df, dc_df
 
+
 def gen_df(gens, carriers):
     num_gens = len(gens['i'])
     CARRIER_ASSIGN = {
@@ -266,6 +267,45 @@ def gen_df(gens, carriers):
 
     return gen_df, p_fuel_df, p_cost_df
 
+
+def storage_df(storage, num_hours):
+    num_stores = len(storage)
+    energy_capacity = storage['units_p_nom'] * num_hours
+    stor_dict = {
+        'name': storage['units_i'],
+        'bus': storage['units_bus'],
+        'generator':[np.nan] * num_stores,
+        'storage_type':[np.nan] * num_stores,
+        'energy_capacity': energy_capacity,
+        'initial_state_of_charge':[np.nan] * num_stores,
+        'end_state_of_charge':[np.nan] * num_stores,
+        'minimum_state_of_charge':[0] * num_stores,
+        'charge_efficiency': storage['units_efficiency_store'],
+        'discharge_efficiency': storage['units_efficiency_dispatch'],
+        'max_discharge_rate': storage['units_p_nom'],
+        'min_discharge_rate':[0] * num_stores,
+        'max_charge_rate': storage['units_p_nom'],
+        'min_charge_rate':[0] * num_stores,
+        'initial_charge_rate':[np.nan] * num_stores,
+        'initial_discharge_rate':[np.nan] * num_stores,
+        'charge_cost':[0] * num_stores,
+        'discharge_cost':[0] * num_stores,
+        'retention_rate_60min':[1] * num_stores,
+        'ramp_up_input_60min':[np.nan] * num_stores,
+        'ramp_down_input_60min':[np.nan] * num_stores,
+        'ramp_up_output_60min':[np.nan] * num_stores,
+        'ramp_down_output_60min':[np.nan] * num_stores,
+        'in_service':[True] * num_stores,
+        'capital_multiplier':[np.nan] * num_stores,
+        'extension_multiplier':[np.nan] * num_stores,
+        'investment_cost': storage['units_capital_cost'],
+        'investment_cost_kwh':[np.nan] * num_stores,
+    }
+
+    store_df = pd.DataFrame(stor_dict)
+    return store_df
+
+
 # --------------------------#
 if __name__ == "__main__":
 
@@ -274,4 +314,5 @@ if __name__ == "__main__":
     bus_df = bus_df(groups["buses"])
     branch_df, dc_branch_df = branch_df(groups['links'], groups['lines'])
     gen_df, p_fuel_df, p_cost_df = gen_df(groups['generators'], groups['carriers'])
+    storage_df = storage_df(groups['storage'], max(groups['snapshots']['snapshot']))
     pass
