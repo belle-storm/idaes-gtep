@@ -209,6 +209,11 @@ def gen_df(gens, carriers):
         'capital_cost':[],
         'emissions_factor':[],
         'lifetime':[],
+        'efficiency':[],
+        'weight':[],
+        'p_nom_min':[],
+        'p_nom_max':[],
+        'p_max_pu':[],
     }
 
     #extra p_fuel dataframe 
@@ -227,6 +232,28 @@ def gen_df(gens, carriers):
         gen_dict['capital_cost'].append(gens['capital_cost'][ix])
         gen_dict['emissions_factor'].append(CO2_EMISSIONS[gens['carrier'][ix]])
         gen_dict['lifetime'].append(gens['lifetime'][ix])
+        gen_dict['efficiency'].append(gens['efficiency'][ix])
+        gen_dict['weight'].append(gens['weight'][ix])
+        gen_dict['p_nom_min'].append(gens['p_nom_min'][ix])
+        gen_dict['p_nom_max'].append(gens['p_nom_max'][ix])
+        gen_dict['p_max_pu'].append(gens['p_max_pu'][ix])
+
+        #add -c version if extendable
+        if bool(gens['p_nom_extendable']):
+            gen_dict['GEN UID'].append(f'{name}-c') 
+            gen_dict['Bus ID'].append(gens['bus'][ix])
+            gen_dict['Unit Type'].append(CARRIER_ASSIGN[gens['carrier'][ix]]['unit_type'])
+            gen_dict['Fuel'].append(CARRIER_ASSIGN[gens['carrier'][ix]]['fuel'])
+            gen_dict['PMax MW'].append(gens['p_nom'][ix])
+            #extra
+            gen_dict['capital_cost'].append(gens['capital_cost'][ix])
+            gen_dict['emissions_factor'].append(CO2_EMISSIONS[gens['carrier'][ix]])
+            gen_dict['lifetime'].append(gens['lifetime'][ix])
+            gen_dict['efficiency'].append(gens['efficiency'][ix])
+            gen_dict['weight'].append(gens['weight'][ix])
+            gen_dict['p_nom_min'].append(gens['p_nom_min'][ix])
+            gen_dict['p_nom_max'].append(gens['p_nom_max'][ix])
+            gen_dict['p_max_pu'].append(gens['p_max_pu'][ix])
 
         if name in gens['t_p_max_pu_i']:
             p_fuel_idx = gens['t_p_max_pu_i'].index(name)
@@ -246,4 +273,5 @@ if __name__ == "__main__":
     groups, metadata = _load_data_file(file)
     bus_df = bus_df(groups["buses"])
     branch_df, dc_branch_df = branch_df(groups['links'], groups['lines'])
+    gen_df, p_fuel_df, p_cost_df = gen_df(groups['generators'], groups['carriers'])
     pass
