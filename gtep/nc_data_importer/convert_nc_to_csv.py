@@ -2,7 +2,7 @@ import gtep.nc_data_importer.nc_file_reader as nc_reader
 import os
 import pandas as pd
 import numpy as np
-
+from datetime import datetime, timedelta
 
 def _load_data_file(nc_file):
     if not os.path.isfile(nc_file):
@@ -13,6 +13,46 @@ def _load_data_file(nc_file):
     groups = nc_reader.group_data(data)
 
     return groups, metadata
+
+
+def _get_basetime(time_string):
+        # grab the start date from the metadata string
+        for i, char in enumerate(time_string):
+            if char.isdigit():
+                return time_string[:i], time_string[i:]
+
+
+def _get_snapshot_time(start_time: datetime = None, hours_since: int = 0):
+    """
+    Convert the snapshots data into the full datetime
+    by combining the time and the hours since that time
+    """
+    if start_time is None:
+        start_time = datetime("2020-01-01 00:00:00")
+
+    target_time = start_time + timedelta(hours=int(hours_since))
+    return target_time
+
+
+def get_start_end(
+        time_data: list[int], time_string: str, num_days: int = None
+    ) -> tuple[datetime, datetime]:
+        # grab the base datetime from the metadata string
+        _, start_date_string = _get_basetime(time_string)
+        date_format = "%Y-%m-%d %H:%M:%S"
+        dt_object = datetime.strptime(start_date_string, date_format)
+
+        # grab the starting datetime (hours since basetime)
+        start_time = _get_snapshot_time(dt_object, time_data[0])
+
+        if num_days is None:
+            hours = time_data[-1]
+        else:
+            ind = num_days * 24  # convert days to hours
+            hours = time_data[ind]
+        end_time = _get_snapshot_time(dt_object, hours)
+
+        return start_time, end_time
 
 
 def save_csv(df, file_name):
@@ -343,6 +383,35 @@ def storage_df(storage, num_hours):
     return store_df
 
 
+def simulation_objects(start_time, end_time):
+    sim_dict = {
+        'Parameters':['Periods_per_Step','Period Resolution','Date_From','Date_To'],
+        'REAL TIME':[24, 3600, start_time, end_time]
+    }
+    sim_df = pd.DataFrame(sim_dict)
+    return sim_df
+
+
+def time_series_data(time_data, start):
+    time_dict = {
+        'Year':[],
+        'Month':[],
+        'Day':[],
+        'Hour':[],
+    }
+
+    for hr in time_data:
+        dt = _get_snapshot_time(start, hr)
+        #assign to dictionary
+        time_dict['Year'].append(dt.year)
+        time_dict['Month'].append(dt.month)
+        time_dict['Day'].append(dt.day)
+        time_dict['Hour'].append(dt.hour)
+
+    time_df = pd.DataFrame(time_dict)
+    return time_df
+
+
 # --------------------------#
 if __name__ == "__main__":
 
@@ -352,4 +421,8 @@ if __name__ == "__main__":
     branch_df, dc_branch_df = branch_df(groups['links'], groups['lines'])
     gen_df, p_fuel_df, p_cost_df = gen_df(groups['generators'], groups['carriers'])
     storage_df = storage_df(groups['storage'], max(groups['snapshots']['snapshot']))
+    basetime_str = _get_basetime(metadata["variables_metadata"]["snapshots_snapshot"]["units"])
+    start_time, end_time = get_start_end(groups['snapshots']['snapshot'], basetime_str)
+    time_df = time_series_data(groups['snapshots']['snapshot'], start_time)
+    sim_df = simulation_objects(start_time, end_time)
     pass
