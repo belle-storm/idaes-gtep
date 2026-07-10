@@ -57,7 +57,7 @@ def get_start_end(
 
 def save_csv(df, file_name):
     df.to_csv(file_name, index=False, header=True)
-
+    print(f'{file_name} successfully saved!')
 
 def bus_df(bus_data, load_data):
     # save bus data as in csv friendly dataframe
@@ -415,14 +415,24 @@ def time_series_data(time_data, start):
 # --------------------------#
 if __name__ == "__main__":
 
+    #grab data
     file = r"./gtep/data/nc_data/base_s_50_elec.nc"
     groups, metadata = _load_data_file(file)
-    bus_df, load_df, p_load_df, q_load_df = bus_df(groups["buses"])
-    branch_df, dc_branch_df = branch_df(groups['links'], groups['lines'])
-    gen_df, p_fuel_df, p_cost_df = gen_df(groups['generators'], groups['carriers'])
-    storage_df = storage_df(groups['storage'], max(groups['snapshots']['snapshot']))
+
+    #make into dataframes
+    data = {
+        'bus.csv': None,
+        'branch.csv':None
+    }
+    data['bus.csv'], data['bus_load.csv'], data['p_load.csv'], data['q_load.csv'] = bus_df(groups["buses"])
+    data['branch.csv'], data['dc_branch.csv'] = branch_df(groups['links'], groups['lines'])
+    data['gen.csv'], data['p_fuel.csv'], data['p_cost.csv'] = gen_df(groups['generators'], groups['carriers'])
+    data['storage.csv'] = storage_df(groups['storage'], max(groups['snapshots']['snapshot']))
     basetime_str = _get_basetime(metadata["variables_metadata"]["snapshots_snapshot"]["units"])
     start_time, end_time = get_start_end(groups['snapshots']['snapshot'], basetime_str)
-    time_df = time_series_data(groups['snapshots']['snapshot'], start_time)
-    sim_df = simulation_objects(start_time, end_time)
-    pass
+    data['time_series.csv'] = time_series_data(groups['snapshots']['snapshot'], start_time)
+    data['simulation_objects.csv'] = simulation_objects(start_time, end_time)
+
+    #save dataframes to csv
+    for filename, df in data.items():
+        save_csv(df, os.path.join(os.path.dirname(file), filename))
