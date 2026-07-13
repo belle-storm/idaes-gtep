@@ -8,6 +8,8 @@ from egret.parsers.rts_gmlc._reserves import (
 from datetime import datetime, timedelta
 import gtep.nc_data_importer.nc_file_reader as nc_reader
 import os
+import pandas as pd
+import warnings
 
 file = r"./gtep/data/nc_data/base_s_50_elec.nc"
 
@@ -20,193 +22,111 @@ class NCDataProvider:
         self.data_groups, self.metadata = self._load_data_file(
             options["data_path"]
         )  # TODO replace with csv directory
-        # check if there is a num_days key
-        if "num_days" not in options.keys():
-            options["num_days"] = None
+        
         # grab the start and end data times
-        self._start_time, self._end_time = self.get_start_end(
-            self.data_groups["snapshots"]["snapshots_snapshot"],
-            self.metadata["variables_metadata"]["snapshots_snapshot"]["units"],
-            num_days=options["num_days"],
-        )
+        self._start_time, end_time = self.read_simulation_obj(options["data_path"])
+        # check if there is a num_days key
+        if "num_days"  in options.keys():
+            end_time = self._start_time + timedelta(days=options["num_days"])
+        self._end_time = end_time
+
         self._cache = self.parse_to_cache()
 
-    def _load_data_file(self, nc_file):
-        if not os.path.isfile(nc_file):
-            raise ValueError(f"nc_file '{nc_file}' is not a file")
-        # read the file
-        data, metadata = nc_reader.read_nc(nc_file)
-        # group data
-        groups = nc_reader.group_data(data)
-
-        return groups, metadata
-
-    def _get_basetime(self, time_string):
-        # grab the start date from the metadata string
-        for i, char in enumerate(time_string):
-            if char.isdigit():
-                return time_string[:i], time_string[i:]
-
-    def _get_snapshot_time(self, start_time: datetime = None, hours_since: int = 0):
-        """
-        Convert the snapshots data into the full datetime
-        by combining the time and the hours since that time
-        """
-        if start_time is None:
-            start_time = datetime("2020-01-01 00:00:00")
-
-        target_time = start_time + timedelta(hours=int(hours_since))
-        return target_time
-
-    def get_start_end(
-        self, time_data: list[int], time_string: str, num_days: int = None
-    ) -> tuple[datetime, datetime]:
-        # grab the base datetime from the metadata string
-        _, start_date_string = self._get_basetime(time_string)
-        date_format = "%Y-%m-%d %H:%M:%S"
-        dt_object = datetime.strptime(start_date_string, date_format)
-
-        # grab the starting datetime (hours since basetime)
-        start_time = self._get_snapshot_time(dt_object, time_data[0])
-
-        if num_days is None:
-            hours = time_data[-1]
-        else:
-            ind = num_days * 24  # convert days to hours
-            hours = time_data[ind]
-        end_time = self._get_snapshot_time(dt_object, hours)
+    def read_simulation_obj(self, dir):
+        file_path = os.path.join(dir, 'simulation_objects.csv')
+        sim_df = pd.read_csv(file_path)
+        start_time = datetime(sim_df.loc["Date_From"]["DAY_AHEAD"])
+        end_time = datetime(sim_df.loc["Date_To"]["DAY_AHEAD"])
 
         return start_time, end_time
 
-    def create_nc_skeleton(self, data_groups):
+    def create_nc_skeleton(self, data_dir):
         model_data = data_skeleton.create_skeleton()
+
+        system = model_data["system"]
+        system["name"] = "nc_data"
+
         elements = model_data["elements"]
         system = model_data["system"]
 
-        system["name"] = "nc_data"
+        self._read_buses(data_dir, elements, system)
+        self._read_branches(data_dir, elements)
+        self._read_generators(data_dir, elements)
 
         return model_data
 
-    def _create_rtsgmlc_skeleton(rts_gmlc_dir: str) -> dict:
-        """
-        Creates a data dictionary from the RTS-GMLC data files, without loading hourly data
-
-        Parameters
-        ----------
-        rts_gmlc_dir : str
-            Path to directory holding csv files in RTS-GMLC format (bus.csv, gen.csv, etc).
-
-        Returns
-        -------
-        data : dict
-            Returns a dict loaded from the RTS-GMLC data
-        """
-
-        base_dir = rts_gmlc_dir
-
-        model_data = md.ModelData.empty_model_data_dict()
-
-        elements = model_data["elements"]
-        system = model_data["system"]
-
-        system["name"] = "RTS-GMLC"
-
-        # this is the default used in the MATPOWER writer for RTS-GMLC
-        system["baseMVA"] = 100.0
-
-        bus_id_to_name = _read_buses_and_areas(base_dir, elements, system)
-        _read_branches(base_dir, elements, bus_id_to_name)
-        _read_generators(base_dir, elements, bus_id_to_name)
-
-    def _read_buses_and_areas(base_dir: str, elements: dict, system: dict) -> dict:
+    def _read_buses(self, base_dir: str, elements: dict, system: dict) -> dict:
 
         elements["bus"] = {}
         elements["load"] = {}
         elements["shunt"] = {}
 
         # add the buses
-        bus_types = {"PQ": "PQ", "PV": "PV", "Ref": "ref"}
         bus_id_to_name = {}
         bus_areas = set()
         bus_df = pd.read_csv(os.path.join(base_dir, "bus.csv"))
-        has_shunt_cols = "MW Shunt G" in bus_df and "MVAR Shunt B" in bus_df
+
         for idx, row in bus_df.iterrows():
-            BUS_TYPE = row["Bus Type"]
-            if not BUS_TYPE in bus_types:
-                raise ValueError(
-                    f'Encountered an unsupported bus type: "{BUS_TYPE}" when parsing RTS-GMLC input file'
-                )
 
             bus_name = str(row["Bus Name"])
             bus_dict = {
                 "id": str(row["Bus ID"]),
                 "base_kv": float(row["BaseKV"]),
-                "matpower_bustype": bus_types[BUS_TYPE],
+                "matpower_bustype": row["Bus Type"],
                 "vm": float(row["V Mag"]),
                 "va": float(row["V Angle"]),
                 "v_min": 0.95,
                 "v_max": 1.05,
                 "area": str(row["Area"]),
                 "zone": str(row["Zone"]),
+                #extra data 
+                "Carrier": str(row["carrier"]),
+                "x": float(row["x"]),
+                "y": float(row["y"]),
+                "sub_network": float(row["sub_network"]),
+                "substation_lv": float(row["substation_lv"]),
+                "substation_off": float(row["substation_off"]),
             }
 
             if bus_dict["base_kv"] <= 0:
                 raise ValueError(
                     f'BaseKV value for bus "{bus_name}" is <= 0. Not supported.'
                 )
-
-            PD = float(row["MW Load"])
-            QD = float(row["MVAR Load"])
-            if PD != 0 or QD != 0:
-                load_dict = {
-                    "bus": bus_name,
-                    "in_service": True,
-                    "p_load": PD,
-                    "q_load": QD,
-                    "area": bus_dict["area"],
-                    "zone": bus_dict["zone"],
-                }
-                elements["load"][bus_name] = load_dict
-
-            if has_shunt_cols:
-                GS = float(row["MW Shunt G"])
-                BS = float(row["MVAR Shunt B"])
-                if GS != 0 or BS != 0:
-                    shunt_dict = {
-                        "shunt_type": "fixed",
-                        "bus": bus_name,
-                        "gs": GS,
-                        "bs": BS,
-                    }
-                    elements["shunt"][bus_name] = shunt_dict
-
-            if BUS_TYPE == "Ref":
-                va = bus_dict["va"]
-                if va != 0:
-                    if abs(va) >= 1e-16:
-                        raise ValueError(
-                            "EGRET only supports reference buses with an angle of 0 degrees."
-                        )
-                    msg = (
-                        "\nEgret only supports reference buses with an angle of 0 degrees. \nFound a "
-                        "reference bus with an angle close to 0. \n"
-                        "Value: {va}\nSetting reference bus angle to 0."
-                    )
-                    warnings.warn(msg)
-                    bus_dict["va"] = 0.0
-                system["reference_bus"] = bus_name
-                system["reference_bus_angle"] = 0
-
+            
             bus_id_to_name[bus_dict["id"]] = bus_name
             bus_areas.add(bus_dict["area"])
             elements["bus"][bus_name] = bus_dict
 
+        #add loads to elements  
+        load_df = pd.read_csv(os.path.join(base_dir, "bus_load.csv"))
+        p_load_df = pd.read_csv(os.path.join(base_dir, "p_load.csv"))
+        q_load_df = pd.read_csv(os.path.join(base_dir, "q_load.csv"))
+
+        for idx, row in load_df.iterrows():
+            bus_name = str(row["Bus Name"])
+            #format load dictionaries
+            PD = {'data type':'time_series','values':p_load_df[bus_name]}
+            QD = {'data type':'time_series','values':q_load_df[bus_name]}
+
+            load_dict = {
+                "bus": bus_name,
+                "in_service": row['in_service'],
+                "p_load": PD,
+                "q_load": QD,
+                "area": row["area"],
+                "zone": row["zone"],
+            }
+            elements["load"][bus_name] = load_dict
+
+        #add filler valyes for reference buses
+        system["reference_bus"] = None
+        system["reference_bus_angle"] = 0
+
         # add the areas
         elements["area"] = {name: dict() for name in bus_areas}
 
-        return bus_id_to_name
 
-    def _read_branches(base_dir: str, elements: dict, bus_id_to_name: dict) -> None:
+    def _read_branches(base_dir: str, elements: dict) -> None:
 
         # add the branches
         elements["branch"] = {}
@@ -259,7 +179,7 @@ class NCDataProvider:
                 elements["dc_branch"][name] = branch_dict
             branch_df = None
 
-    def _read_generators(base_dir: str, elements: dict, bus_id_to_name: dict) -> None:
+    def _read_generators(base_dir: str, elements: dict) -> None:
         from math import isnan
 
         # add the generators
