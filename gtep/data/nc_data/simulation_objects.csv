@@ -1,0 +1,5 @@
+Parameters,REAL TIME
+Periods_per_Step,24
+Period Resolution,3600
+Date_From,2020-01-01 00:00:00
+Date_To,2020-12-31 23:00:00
