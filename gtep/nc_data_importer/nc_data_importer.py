@@ -1,4 +1,4 @@
-import gtep.nc_data_importer.data_skeleton as data_skeleton
+import egret.data.model_data as md
 from datetime import datetime, timedelta
 import os
 import pandas as pd
@@ -39,8 +39,41 @@ class NCDataProvider:
 
         return data_start, data_end
 
+    def create_skeleton(self):
+        model_data = md.ModelData.empty_model_data_dict()
+        elements = model_data["elements"]
+        system = model_data["system"]
+
+        self._build_elements(elements)
+        self._build_system(system)
+
+        return model_data
+    
+    def _build_system(self, system):
+        system["name"] = "NC"
+        system["baseMVA"] = None
+        system["reference_bus"] = None
+        system["reference_bus_angle"] = None
+        system["time_period_length_minutes"] = None
+        system["time_keys"] = []
+        system["min_operating_reserve"] = None
+        system["min_spinning_reserve"] = None
+
+
+    def _build_elements(self,elements):
+        elements["bus"] = {}
+        elements["load"] = {}
+        elements["shunt"] = {}
+
+        elements["branch"] = {}
+        elements["dc_branch"] = {}
+
+        elements["generator"] = {}
+
+        elements["storage"] = {}
+
     def _create_nc_skeleton(self, data_dir):
-        model_data = data_skeleton.create_skeleton()
+        model_data = self.create_skeleton()
 
         system = model_data["system"]
         system["name"] = "nc_data"
@@ -56,13 +89,7 @@ class NCDataProvider:
         return model_data
 
     def _read_buses(self, base_dir: str, elements: dict, system: dict) -> dict:
-
-        elements["bus"] = {}
-        elements["load"] = {}
-        elements["shunt"] = {}
-
         # add the buses
-        bus_id_to_name = {}
         bus_areas = set()
         bus_df = pd.read_csv(os.path.join(base_dir, "bus.csv"))
 
@@ -93,7 +120,6 @@ class NCDataProvider:
                     f'BaseKV value for bus "{bus_name}" is <= 0. Not supported.'
                 )
             
-            bus_id_to_name[bus_dict["id"]] = bus_name
             bus_areas.add(bus_dict["area"])
             elements["bus"][bus_name] = bus_dict
 
@@ -128,7 +154,6 @@ class NCDataProvider:
     def _read_branches(base_dir: str, elements: dict) -> None:
 
         # add the branches
-        elements["branch"] = {}
         branch_df = pd.read_csv(os.path.join(base_dir, "branch.csv"))
 
         for idx, row in branch_df.iterrows():
@@ -167,7 +192,6 @@ class NCDataProvider:
 
         # add the DC branches
         if os.path.exists(os.path.join(base_dir, "dc_branch.csv")):
-            elements["dc_branch"] = {}
             dc_branch_df = pd.read_csv(os.path.join(base_dir, "dc_branch.csv"))
 
             for idx, row in dc_branch_df.iterrows():
@@ -196,7 +220,6 @@ class NCDataProvider:
 
     def _read_generators(base_dir: str, elements: dict) -> None:
         # add the generators
-        elements["generator"] = {}
         RENEWABLE_TYPES = ['GEO', 'PV','WIND','ROR','HYDRO','RTPV']
 
         gen_df = pd.read_csv(os.path.join(base_dir, "gen.csv"))
