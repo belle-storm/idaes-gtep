@@ -1,3 +1,26 @@
+#################################################################################
+# The Institute for the Design of Advanced Energy Systems Integrated Platform
+# Framework (IDAES IP) was produced under the DOE Institute for the
+# Design of Advanced Energy Systems (IDAES).
+#
+# Copyright (c) 2018-2026 by the software owners: The Regents of the
+# University of California, through Lawrence Berkeley National Laboratory,
+# National Technology & Engineering Solutions of Sandia, LLC, Carnegie Mellon
+# University, West Virginia University Research Corporation, et al.
+# All rights reserved.  Please see the files COPYRIGHT.md and LICENSE.md
+# for full copyright and license information.
+#################################################################################
+
+"""NC expansion planning data utilities.
+
+This module defines an expansion-planning data wrapper for NC input data.
+It loads NC-formatted data, converts it into an Egret model, and builds
+representative time periods for expansion planning workflows.
+
+:module: nc_expansion_planning_data
+:author: Bstorm
+"""
+
 from gtep.gtep_data import ExpansionPlanningData
 from gtep.nc_data_importer.nc_data_importer import NCDataProvider
 from egret.data.model_data import ModelData as EgretModel
@@ -8,22 +31,56 @@ logger = logging.getLogger("gtep.gtep_data")
 
 
 class NCExpansionPlanningData(ExpansionPlanningData):
+    """Expansion-planning data handler for NC-formatted input.
+
+    :param stages: Number of planning stages.
+    :type stages: int
+    :param num_reps: Number of representative periods.
+    :type num_reps: int
+    :param len_reps: Length of each representative period.
+    :type len_reps: int
+    :param num_commit: Number of commitment periods.
+    :type num_commit: int
+    :param num_dispatch: Number of dispatch periods.
+    :type num_dispatch: int
+    :param duration_dispatch: Duration of each dispatch period in minutes.
+    :type duration_dispatch: int
+    """
     def __init__(
         self,
-        stages=2,
-        num_reps=4,
-        len_reps=1,
-        num_commit=24,
-        num_dispatch=1,
-        duration_dispatch=60,
-    ):
+        stages: int = 2,
+        num_reps: int = 4,
+        len_reps: int = 1,
+        num_commit: int = 24,
+        num_dispatch: int = 1,
+        duration_dispatch: int = 60,
+    ) -> None:
+        """Initialize the NC expansion-planning data object."""
         super().__init__(
             stages, num_reps, len_reps, num_commit, num_dispatch, duration_dispatch
         )
 
         self.data_type = "nc_data"
 
-    def _build_rep_dates(self, dates, weights, num_days = 365, period_per_step=24):
+    def _build_rep_dates(
+        self,
+        dates: list[str],
+        weights: list[float],
+        num_days: int = 365,
+        period_per_step: int = 24,
+    ) -> None:
+        """Build representative dates and weights.
+
+        :param dates: User-provided representative dates, if any.
+        :type dates: list[str] | None
+        :param weights: User-provided representative weights, if any.
+        :type weights: list[float] | None
+        :param num_days: Number of days in the modeled horizon.
+        :type num_days: int
+        :param period_per_step: Number of time keys per representative day.
+        :type period_per_step: int
+        :raises ValueError: If the number of dates or weights is invalid.
+        """
         # Get the timestamps in the loaded day-ahead data. Default
         # representative_dates are selected from this list to ensure
         # they correspond to valid input data timestamps. if
@@ -99,7 +156,7 @@ class NCExpansionPlanningData(ExpansionPlanningData):
 
         self.representative_dates = dates
 
-        if weights:
+        if weights is not None:
 
             if len(dates) != len(weights):
                 raise ValueError(
@@ -146,12 +203,24 @@ class NCExpansionPlanningData(ExpansionPlanningData):
 
         self.representative_data = data_list
 
-    def load_nc_data(self, 
-            nc_file,
-            representative_dates=None,
-            representative_weights={},
-            options_dict=None,
-            ):
+    def load_nc_data(
+        self,
+        nc_file: str,
+        representative_dates: list[str] = None,
+        representative_weights: list[float] = None,
+        options_dict: dict[str, any] = None,
+    ) -> None:
+        """Load NC data and prepare representative periods.
+
+        :param nc_file: Path to the NC data directory.
+        :type nc_file: str
+        :param representative_dates: Representative timestamps to use.
+        :type representative_dates: list[str] | None
+        :param representative_weights: Weights corresponding to representative dates.
+        :type representative_weights: list[float] | None
+        :param options_dict: Optional loader configuration dictionary.
+        :type options_dict: dict[str, Any] | None
+        """
 
         if options_dict is None:
             options_dict = {"data_path": nc_file, 'num_days':365}
@@ -182,7 +251,7 @@ class NCExpansionPlanningData(ExpansionPlanningData):
                 "Please re-check the input data. Fuel costs are multiplied by "
                 "heat_rate, so resulting fuel costs will all be 0."
             )
-            
+
         self._build_rep_dates(representative_dates, representative_weights, options_dict['num_days'], periods_per_step)
         
 
