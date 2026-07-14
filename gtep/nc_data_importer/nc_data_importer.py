@@ -1,19 +1,8 @@
 import gtep.nc_data_importer.data_skeleton as data_skeleton
-from egret.parsers.rts_gmlc.parsed_cache import ParsedCache
-from egret.parsers.rts_gmlc._reserves import (
-    ScalarReserveData,
-    ScalarReserveValue,
-    reserve_name_map,
-)
 from datetime import datetime, timedelta
-import gtep.nc_data_importer.nc_file_reader as nc_reader
 import os
 import pandas as pd
-import warnings
 from math import isnan
-
-file = r"./gtep/data/nc_data/base_s_50_elec.nc"
-
 
 class NCDataProvider:
     """Provides data for RTS-GMLC like files"""
@@ -24,8 +13,8 @@ class NCDataProvider:
             raise ValueError(f'NC Data directory "{options["data_path"]}" does not exist')
         
         # grab the start and end data times
-        sim_df = self._read_simulation_obj(options["data_path"])
-        self._start_time, end_time = self._get_data_date_range(sim_df)
+        self.metadata_df = self._read_simulation_obj(options["data_path"])
+        self._start_time, end_time = self._get_data_date_range(self.metadata_df)
         
         # check if there is a num_days key
         if "num_days"  in options.keys():
@@ -218,9 +207,12 @@ class NCDataProvider:
 
             name = str(row["GEN UID"])
             bus_name = str(row["Bus ID"])
+            in_service_flag = True
+            if '-c' in name:
+                in_service_flag = False
             gen_dict = {
                 "bus": bus_name,
-                "in_service": True,
+                "in_service": in_service_flag,
                 "mbase": 100.0,
                 "pg": float(row["MW Inj"]),
                 "qg": float(row["MVAR Inj"]),
@@ -271,6 +263,7 @@ class NCDataProvider:
             gen_dict["ramp_up_rate"] = 0.1
             gen_dict["ramp_down_rate"] = 0.1
             gen_dict["start_fuel"] = 1
+            gen_dict['heat_rate']=1
 
             fixed_startup_cost = float(row["Non Fuel Start Cost $"])
             if not isnan(fixed_startup_cost):
@@ -386,7 +379,6 @@ class NCDataProvider:
             "DAY_AHEAD": int(metadata_df.loc["Period_Resolution", "DAY_AHEAD"]) // 60,
         }
 
-        data_start, data_end = self._get_data_date_range(metadata_df)
         #TODO maybe check if start and end are within the data start and data end
 
         self._read_timeseries_data(
