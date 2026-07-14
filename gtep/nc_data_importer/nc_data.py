@@ -89,7 +89,7 @@ class NCExpansionPlanningData(ExpansionPlanningData):
         time_keys = self.md.data["system"]["time_keys"]
 
         if dates is None:
-            available_day_starts = time_keys[::period_per_step]
+            available_day_starts = time_keys[::int(period_per_step)]
 
             if len(available_day_starts) < self.num_reps:
                 raise ValueError(
@@ -153,8 +153,9 @@ class NCExpansionPlanningData(ExpansionPlanningData):
                     "The following representative_dates are not valid timestamps in the "
                     f"loaded day-ahead input data: {missing_dates}"
                 )
+            representative_dates = dates
 
-        self.representative_dates = dates
+        self.representative_dates = representative_dates
 
         if weights is not None:
 
@@ -198,7 +199,7 @@ class NCExpansionPlanningData(ExpansionPlanningData):
         time_keys = self.md.data["system"]["time_keys"]
         for date in self.representative_dates:
             key_idx = time_keys.index(date)
-            time_key_set = time_keys[key_idx : key_idx + period_per_step]
+            time_key_set = time_keys[key_idx : key_idx + int(period_per_step)]
             data_list.append(self.md.clone_at_time_keys(time_key_set))
 
         self.representative_data = data_list
@@ -236,7 +237,7 @@ class NCExpansionPlanningData(ExpansionPlanningData):
         data = data_provider._cache
         self.md = EgretModel(data)
 
-        periods_per_step = data_provider.metadata_df.loc["Periods_per_Step"]["DAY_AHEAD"]
+        periods_per_step = data_provider.metadata_df.loc["Periods_per_Step"]["REAL TIME"]
 
         thermal_heat_rates = [
             self.md.data["elements"]["generator"][gen].get("heat_rate", 0)
