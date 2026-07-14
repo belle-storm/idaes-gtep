@@ -392,6 +392,9 @@ class NCDataProvider:
         self._read_timeseries_data(
             model_data['system'], nc_data_dir, begin_time, end_time, minutes_per_period
         )
+        #add defaults
+        model_data['system']['min_operating_reserve'] = 0.1
+        model_data['system']['min_spinning_reserve'] = 0.1
 
         return model_data
 
