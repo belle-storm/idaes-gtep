@@ -1,5 +1,10 @@
 from gtep.gtep_data import ExpansionPlanningData
 from gtep.nc_data_importer.nc_data_importer import NCDataProvider
+from egret.data.model_data import ModelData as EgretModel
+import random
+import logging
+
+logger = logging.getLogger("gtep.gtep_data")
 
 
 class NCExpansionPlanningData(ExpansionPlanningData):
@@ -18,39 +23,166 @@ class NCExpansionPlanningData(ExpansionPlanningData):
 
         self.data_type = "nc_data"
 
-    def _build_rep_dates(md, dates, weights, num_days, stages, period_per_step):
-        if weights is None:
-            # set the weight for each day to the total weight divided by number of days
-            total_weight = num_days * stages
-            weight_per_date = int(total_weight / (len(dates)))
-            representative_weights = {
-                key: weight_per_date for date, key in enumerate(dates)
+    def _build_rep_dates(self, dates, weights, num_days = 365, period_per_step=24):
+        # Get the timestamps in the loaded day-ahead data. Default
+        # representative_dates are selected from this list to ensure
+        # they correspond to valid input data timestamps. if
+        # representative_dates are provided by the user, those values
+        # are used instead.
+        time_keys = self.md.data["system"]["time_keys"]
+
+        if dates is None:
+            available_day_starts = time_keys[::period_per_step]
+
+            if len(available_day_starts) < self.num_reps:
+                raise ValueError(
+                    "Not enough available day-start timestamps to select default representative dates. Please provide a custom list of representative_dates in the driver or reduce num_reps."
+                )
+
+            # Pick 4 default representative dates from the loaded
+            # data: winter, spring, summer, and fall. If self.num_reps
+            # < 4, use only the first self.num_reps default dates. If
+            # more than 4 representative periods are requested, keep
+            # these 4 defaults and randomly select the remaining dates
+            # from the available day-start timestamps.
+            default_representative_dates = [
+                available_day_starts[27],  # 2020-01-28
+                available_day_starts[113],  # 2020-04-23
+                available_day_starts[186],  # 2020-07-05
+                available_day_starts[287],  # 2020-10-14
+            ]
+
+            if self.num_reps <= 4:
+                representative_dates = default_representative_dates[: self.num_reps]
+            else:
+                if len(available_day_starts) < self.num_reps:
+                    raise ValueError(
+                        "Not enough available day-start timestamps to select default representative dates. "
+                        "Please provide a custom list of representative_dates in the driver or reduce num_reps."
+                    )
+
+                random_seed = 42
+                rng = random.Random(random_seed)
+                remaining_dates = [
+                    date
+                    for date in available_day_starts
+                    if date not in default_representative_dates
+                ]
+                additional_dates = rng.sample(
+                    remaining_dates,
+                    self.num_reps - len(default_representative_dates),
+                )
+                representative_dates = sorted(
+                    default_representative_dates + additional_dates,
+                    key=lambda date: time_keys.index(date),
+                )
+        else:
+            # Validate that the user-provided representative_dates
+            # match the requested number of representative periods.
+            if len(dates) != self.num_reps:
+                raise ValueError(
+                    f"The number of provided representative_dates must match num_reps. "
+                    f"Received len(representative_dates)={len(dates)}, "
+                    f"but num_reps={self.num_reps}."
+                )
+
+            # Validate that all user-provided representative dates
+            # exist in the loaded day-ahead timestamps.
+            missing_dates = [
+                date for date in dates if date not in time_keys
+            ]
+            if missing_dates:
+                raise ValueError(
+                    "The following representative_dates are not valid timestamps in the "
+                    f"loaded day-ahead input data: {missing_dates}"
+                )
+
+        self.representative_dates = dates
+
+        if weights:
+
+            if len(dates) != len(weights):
+                raise ValueError(
+                    "Length of representative_dates and representative_weights must match."
+                )
+            else:
+                print(
+                    "INFO: representative_dates and representative_weights are aligned. Continue building the data modeling object..."
+                )
+
+            # Store as a dictionary
+            self.representative_weights_dict = dict(
+                zip(dates, weights)
+            )
+
+        else:
+            # Set weight for each representative day to default value
+            # of 1. The other option is to set the weight for each day
+            # to the total weight divided by the number of
+            # representative dates.
+            set_default_weight = True
+            if set_default_weight:
+                weight_per_date = 1
+            else:
+                total_weight = num_days * self.stages
+                weight_per_date = int(total_weight / len(representative_dates))
+
+            # Store weights as a dictionary by representative date
+            self.representative_weights_dict = {
+                date: weight_per_date for date in self.representative_dates
             }
 
-        time_keys = md.data["system"]["time_keys"]
-
+        # IMPORTANT TO READ: Always add or modify any new elements in
+        # self.md.data (such as new time series or parameters) BEFORE
+        # creating representative_data using clone_at_time_keys. This
+        # ensures all representative ModelData objects will have the
+        # new elements.
         data_list = []
-
-        for date in dates:
+        time_keys = self.md.data["system"]["time_keys"]
+        for date in self.representative_dates:
             key_idx = time_keys.index(date)
             time_key_set = time_keys[key_idx : key_idx + period_per_step]
-            data_list.append(md.clone_at_time_keys(time_key_set))
+            data_list.append(self.md.clone_at_time_keys(time_key_set))
 
-        representative_data = data_list
+        self.representative_data = data_list
 
-        return representative_weights, representative_data
-
-    def load_nc_data(self, nc_file, options_dict=None):
+    def load_nc_data(self, 
+            nc_file,
+            representative_dates=None,
+            representative_weights={},
+            options_dict=None,
+            ):
 
         if options_dict is None:
-            options_dict = {"data_path": nc_file}
+            options_dict = {"data_path": nc_file, 'num_days':365}
         else:
             options_dict["data_path"] = nc_file
+            if 'num_days' not in options_dict.keys():
+                options_dict["num_days"] = 365
 
+        #import data 
         data_provider = NCDataProvider(options=options_dict)
 
-    def import_load_data(self):
-        pass
+        #format as egret model
+        data = data_provider._cache
+        self.md = EgretModel(data)
 
-    def import_storage_data(self):
-        pass
+        periods_per_step = data_provider.metadata_df.loc["Periods_per_Step"]["DAY_AHEAD"]
+
+        thermal_heat_rates = [
+            self.md.data["elements"]["generator"][gen].get("heat_rate", 0)
+            for gen in self.md.data["elements"]["generator"]
+            if self.md.data["elements"]["generator"][gen].get("generator_type")
+            == "thermal"
+        ]
+
+        if thermal_heat_rates and all(hr == 0 for hr in thermal_heat_rates):
+            logger.info(
+                "All thermal generators have heat_rate values equal to 0. "
+                "Please re-check the input data. Fuel costs are multiplied by "
+                "heat_rate, so resulting fuel costs will all be 0."
+            )
+            
+        self._build_rep_dates(representative_dates, representative_weights, options_dict['num_days'], periods_per_step)
+        
+
