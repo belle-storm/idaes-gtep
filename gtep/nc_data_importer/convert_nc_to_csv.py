@@ -334,7 +334,7 @@ def gen_df(gens, carriers):
         if name in gens["t_p_max_pu_i"]:
             p_fuel_idx = list(gens["t_p_max_pu_i"]).index(name)
             p_fuel[name] = gens["t_p_max_pu"][p_fuel_idx]
-        p_cost[name] = [gens["marginal_cost"][ix]]
+        p_cost[name] = [gens["marginal_cost"][ix], gens["marginal_cost"][ix]]
 
     # add fill values
     gen_dict["MW Inj"] = [np.nan] * num_gens
