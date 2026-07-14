@@ -238,9 +238,9 @@ class NCDataProvider:
                 "resistance": float(row["R"]),
                 "reactance": float(row["X"]),
                 "charging_susceptance": float(row["B"]),
-                "rating_long_term": float(row["LTE Rating"]) or None,
-                "rating_short_term": float(row["STE Rating"]) or None,
-                "rating_emergency": float(row["Cont Rating"]) or None,
+                "rating_long_term": float(row["LTE Rating"]),
+                "rating_short_term": float(row["STE Rating"]),
+                "rating_emergency": float(row["Cont Rating"]),
                 "angle_diff_min": -90,
                 "angle_diff_max": 90,
                 "pf": None,
@@ -407,8 +407,8 @@ class NCDataProvider:
                 # these assumptions are the same as prescient-rtsgmlc
                 gen_dict["startup_capacity"] = gen_dict["p_min"]
                 gen_dict["shutdown_capacity"] = gen_dict["p_min"]
-                gen_dict["min_up_time"] = None
-                gen_dict["min_down_time"] = None
+                gen_dict["min_up_time"] = 1
+                gen_dict["min_down_time"] = 1
 
                 elements["generator"][name] = gen_dict
 
