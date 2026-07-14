@@ -68,6 +68,7 @@ class NCDataProvider:
         if not os.path.exists(file_path):
             raise ValueError(f'NC Data File "{file_path}" does not exist')
         sim_df = pd.read_csv(file_path)
+        sim_df = sim_df.set_index("Parameters")
 
         return sim_df
 
@@ -79,8 +80,8 @@ class NCDataProvider:
         :return: Start and end datetimes.
         :rtype: tuple[datetime, datetime]
         """
-        data_start = datetime(metadata_df.loc["Date_From"]["DAY_AHEAD"])
-        data_end = datetime(metadata_df.loc["Date_To"]["DAY_AHEAD"])
+        data_start = pd.to_datetime(metadata_df.loc["Date_From", "REAL TIME"])
+        data_end = pd.to_datetime(metadata_df.loc["Date_To", "REAL TIME"])
 
         return data_start, data_end
 
@@ -162,7 +163,7 @@ class NCDataProvider:
                 "area": str(row["Area"]),
                 "zone": str(row["Zone"]),
                 #extra data 
-                "Carrier": str(row["carrier"]),
+                "carrier": str(row["Carrier"]),
                 "x": float(row["x"]),
                 "y": float(row["y"]),
                 "sub_network": float(row["sub_network"]),
@@ -194,7 +195,7 @@ class NCDataProvider:
                 q_load_df = pd.read_csv(q_load_file)
 
             for idx, row in load_df.iterrows():
-                bus_name = str(row["Bus Name"])
+                bus_name = str(row["bus"])
                 #format load dictionaries
                 PD = {}
                 QD = {}
@@ -251,7 +252,7 @@ class NCDataProvider:
                 "distance": float(row["length"]),
                 "loss_rate": float(row['loss_rate']),
                 # extra columns
-                "Carrier": str(row["Carrier"]),
+                "carrier": str(row["Carrier"]),
                 "s_max_pu": float(row["s_max_pu"]),
                 "num_parallel": float(row["num_parallel"]),
                 "sub_network": float(row["sub_network"]),
@@ -333,18 +334,13 @@ class NCDataProvider:
                     # extra
                     "investment_cost": float(row['capital_cost']),
                     "emissions_factor": float(row['emissions_factor']),
-                    "lifetime": int(row['lifetime']),
+                    "lifetime": float(row['lifetime']),
                     "efficiency": float(row['efficiency']),
                     "weight": row['weight'],
                     "p_nom_min": float(row['p_nom_min']),
                     "p_nom_max": row['p_nom_max'],
                     "p_max_pu": float(row['p_max_pu']),
                 }
-
-                # Remove optional values if not present
-                for key in ("p_min", "p_max", "q_min", "q_max"):
-                    if isnan(gen_dict[key]):
-                        del gen_dict[key]
 
                 gen_dict['p_fuel'] = {}
                 gen_dict['p_cost'] = {}
@@ -353,14 +349,17 @@ class NCDataProvider:
                 if UNIT_TYPE in RENEWABLE_TYPES:
                     gen_dict["generator_type"] = "renewable"
                     if p_fuel_df is not None:
-                        gen_dict['p_fuel'] = {'data_type':'fuel_curve','values':p_fuel_df[name]}
+                        gen_dict['p_fuel'] = {'data_type':'fuel_curve','values':p_fuel_df.get(name, [])}
                     # ROR is treated as HYDRO by Egret
                     if UNIT_TYPE == "ROR":
                         gen_dict["unit_type"] = "HYDRO"
                 else:
                     gen_dict["generator_type"] = "thermal"
                     if p_cost_df is not None:
-                        gen_dict['p_cost'] = {'data_type':'cost_data','values':p_cost_df[name]}
+                        gen_name = name
+                        if '-c' in name:
+                            gen_name = name[:-2]
+                        gen_dict['p_cost'] = {'data_type':'cost_data','values':p_cost_df.get(gen_name, [])}
 
                 #set defaults
                 gen_dict["spinning_reserve_frac"] = 0.1
@@ -430,7 +429,7 @@ class NCDataProvider:
                 'end_state_of_charge' :row['end_state_of_charge'],
                 'minimum_state_of_charge' :row['minimum_state_of_charge'],
                 'charge_efficiency' :row['charge_efficiency'],
-                'discharge_effeciency' :row['discharge_effeciency'],
+                'discharge_efficiency' :row['discharge_efficiency'],
                 'max_discharge_rate' :row['max_discharge_rate'],
                 'min_discharge_rate' :row['min_discharge_rate'],
                 'max_charge_rate' :row['max_charge_rate'],
@@ -506,7 +505,7 @@ class NCDataProvider:
         # Save the data frequencies
         metadata_df = self._read_simulation_obj(nc_data_dir)
         minutes_per_period = {
-            "DAY_AHEAD": int(metadata_df.loc["Period_Resolution", "DAY_AHEAD"]) // 60,
+            "REAL TIME": int(metadata_df.loc["Period Resolution", "REAL TIME"]) // 60,
         }
 
         #TODO maybe check if start and end are within the data start and data end
