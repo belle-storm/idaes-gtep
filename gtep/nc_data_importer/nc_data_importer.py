@@ -160,6 +160,9 @@ class NCDataProvider:
         for idx, row in bus_df.iterrows():
 
             bus_name = str(row["Bus Name"])
+            area = row["area"]
+            if np.isnan(area):
+                area = bus_name.split(' ')[0]
             bus_dict = {
                 "id": str(row["Bus ID"]),
                 "base_kv": float(row["BaseKV"]),
@@ -168,7 +171,7 @@ class NCDataProvider:
                 "va": float(row["V Angle"]),
                 "v_min": 0.95,
                 "v_max": 1.05,
-                "area": str(row["Area"]),
+                "area": area,
                 "zone": str(row["Zone"]),
                 # extra data
                 "carrier": str(row["Carrier"]),
@@ -207,20 +210,21 @@ class NCDataProvider:
                 area = row["area"]
                 if np.isnan(area):
                     area = bus_name.split(' ')[0]
+                    bus_areas.add(area) #make sure this is in the areas list
                 # format load dictionaries
                 PD = {}
                 QD = {}
                 if p_load_df is not None:
-                    PD = {"data type": "time_series", "values": p_load_df[bus_name]}
+                    PD = {"data_type": "time_series", "values": p_load_df[bus_name]}
                 if q_load_df is not None:
-                    QD = {"data type": "time_series", "values": q_load_df[bus_name]}
+                    QD = {"data_type": "time_series", "values": q_load_df[bus_name]}
 
                 load_dict = {
                     "bus": bus_name,
                     "in_service": row["in_service"],
                     "p_load": PD,
                     "q_load": QD,
-                    "area": row["area"],
+                    "area": area,
                     "zone": row["zone"],
                 }
                 elements["load"][bus_name] = load_dict
