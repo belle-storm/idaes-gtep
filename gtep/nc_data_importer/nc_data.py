@@ -394,7 +394,6 @@ class NCExpansionPlanningData(ExpansionPlanningData):
                     #add scaling value to this branch's value
                     br_data['rating_long_term'] += val
 
-
     def change_generation(
         self,
         func: function,
