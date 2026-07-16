@@ -222,9 +222,12 @@ def branch_df(links, lines):
 def gen_df(gens, carriers):
     num_gens = len(gens["i"])
     CARRIER_ASSIGN = {
-        "CCGT": {"unit_type": "CT", "fuel": "C"},
+        "CCGT": {"unit_type": "CC", "fuel": "G"},
         "biomass": {"unit_type": "BIO", "fuel": "B"},
-        "oil": {"unit_type": "CC", "fuel": "G"},  # FIXME
+        "oil": {
+            "unit_type": "OIL",
+            "fuel": "O",
+        },  # NOTE if breaks set to Unit tupe CT, fuel to G
         "waste": {"unit_type": "LFILL", "fuel": "G"},
         "lignite": {"unit_type": "COAL", "fuel": "C"},
         "nuclear": {"unit_type": "NUC", "fuel": "N"},
@@ -237,7 +240,7 @@ def gen_df(gens, carriers):
         "offwind-float": {"unit_type": "WIND", "fuel": "W"},
         "offwind-dc": {"unit_type": "WIND", "fuel": "W"},
         "onwind": {"unit_type": "WIND", "fuel": "W"},
-        "ror": {"unit_type": "ROR", "fuel": "W"},  # FIXME
+        "ror": {"unit_type": "ROR", "fuel": "H"},
     }
     CO2_EMISSIONS = {}
     # assign co2 emission factors to carrier type
@@ -377,14 +380,16 @@ def gen_df(gens, carriers):
 def storage_df(storage, num_hours):
     num_stores = len(storage["units_i"])
     energy_capacity = storage["units_p_nom"] * num_hours
+    initial_state_charge = 0.5 * energy_capacity
+    inv_cost_kwh = storage["units_capital_cost"] * energy_capacity
     stor_dict = {
         "name": list(storage["units_i"]),
         "bus": list(storage["units_bus"]),
         "generator": [np.nan] * num_stores,
         "storage_type": [np.nan] * num_stores,
         "energy_capacity": energy_capacity,
-        "initial_state_of_charge": [np.nan] * num_stores,
-        "end_state_of_charge": [np.nan] * num_stores,
+        "initial_state_of_charge": initial_state_charge,
+        "end_state_of_charge": initial_state_charge,
         "minimum_state_of_charge": [0] * num_stores,
         "charge_efficiency": list(storage["units_efficiency_store"]),
         "discharge_efficiency": list(storage["units_efficiency_dispatch"]),
@@ -405,7 +410,7 @@ def storage_df(storage, num_hours):
         "capital_multiplier": [np.nan] * num_stores,
         "extension_multiplier": [np.nan] * num_stores,
         "investment_cost": list(storage["units_capital_cost"]),
-        "investment_cost_kwh": [np.nan] * num_stores,
+        "investment_cost_kwh": inv_cost_kwh,
     }
 
     store_df = pd.DataFrame(stor_dict)

@@ -38,9 +38,9 @@ data_object.load_nc_data(data_path)
 mod_object = ExpansionPlanningModel(data=data_object)
 
 mod_object.config["include_investment"] = True
-mod_object.config["include_commitment"] = True
+mod_object.config["include_commitment"] = False
 mod_object.config["include_redispatch"] = True
-mod_object.config["scale_loads"] = True
+mod_object.config["scale_loads"] = False
 mod_object.config["transmission"] = True
 mod_object.config["storage"] = True
 mod_object.config["flow_model"] = "DC"

@@ -26,6 +26,7 @@ import os
 import pandas as pd
 from math import isnan
 
+
 class NCDataProvider:
     """Provides data for RTS-GMLC-like NC files that have been converted into CSV's.
 
@@ -38,14 +39,16 @@ class NCDataProvider:
         """Initialize the provider."""
         # check for the NC data files
         if not os.path.exists(options["data_path"]):
-            raise ValueError(f'NC Data directory "{options["data_path"]}" does not exist')
-        
+            raise ValueError(
+                f'NC Data directory "{options["data_path"]}" does not exist'
+            )
+
         # grab the start and end data times
         self.metadata_df = self._read_simulation_obj(options["data_path"])
         self._start_time, end_time = self._get_data_date_range(self.metadata_df)
-        
+
         # check if there is a num_days key
-        if "num_days"  in options.keys():
+        if "num_days" in options.keys():
             end_time = self._start_time + timedelta(days=options["num_days"])
         self._end_time = end_time
 
@@ -53,7 +56,7 @@ class NCDataProvider:
             options["data_path"],
             self._start_time,
             self._end_time,
-            )
+        )
 
     def _read_simulation_obj(self, dir: str) -> pd.DataFrame:
         """Read simulation object metadata.
@@ -63,8 +66,8 @@ class NCDataProvider:
         :return: Simulation object metadata.
         :rtype: pandas.DataFrame
         """
-        
-        file_path = os.path.join(dir, 'simulation_objects.csv')
+
+        file_path = os.path.join(dir, "simulation_objects.csv")
         if not os.path.exists(file_path):
             raise ValueError(f'NC Data File "{file_path}" does not exist')
         sim_df = pd.read_csv(file_path)
@@ -72,7 +75,9 @@ class NCDataProvider:
 
         return sim_df
 
-    def _get_data_date_range(self, metadata_df: pd.DataFrame) -> tuple[datetime, datetime]:
+    def _get_data_date_range(
+        self, metadata_df: pd.DataFrame
+    ) -> tuple[datetime, datetime]:
         """Get the start and end datetimes from metadata.
 
         :param metadata_df: Metadata dataframe.
@@ -99,7 +104,7 @@ class NCDataProvider:
         self._build_system(system)
 
         return model_data
-    
+
     def _build_system(self, system: dict[str, any]) -> None:
         """Populate the system section of the skeleton."""
         system["name"] = "NC"
@@ -141,7 +146,9 @@ class NCDataProvider:
 
         return model_data
 
-    def _read_buses(self, base_dir: str, elements: dict[str, any], system: dict[str, any]) -> None:
+    def _read_buses(
+        self, base_dir: str, elements: dict[str, any], system: dict[str, any]
+    ) -> None:
         """Read bus and load data."""
         bus_areas = set()
         file_path = os.path.join(base_dir, "bus.csv")
@@ -162,7 +169,7 @@ class NCDataProvider:
                 "v_max": 1.05,
                 "area": str(row["Area"]),
                 "zone": str(row["Zone"]),
-                #extra data 
+                # extra data
                 "carrier": str(row["Carrier"]),
                 "x": float(row["x"]),
                 "y": float(row["y"]),
@@ -175,11 +182,11 @@ class NCDataProvider:
                 raise ValueError(
                     f'BaseKV value for bus "{bus_name}" is <= 0. Not supported.'
                 )
-            
+
             bus_areas.add(bus_dict["area"])
             elements["bus"][bus_name] = bus_dict
 
-        #add loads to elements  
+        # add loads to elements
         load_file = os.path.join(base_dir, "bus_load.csv")
         p_load_file = os.path.join(base_dir, "p_load.csv")
         q_load_file = os.path.join(base_dir, "q_load.csv")
@@ -196,17 +203,17 @@ class NCDataProvider:
 
             for idx, row in load_df.iterrows():
                 bus_name = str(row["bus"])
-                #format load dictionaries
+                # format load dictionaries
                 PD = {}
                 QD = {}
                 if p_load_df is not None:
-                    PD = {'data type':'time_series','values':p_load_df[bus_name]}
+                    PD = {"data type": "time_series", "values": p_load_df[bus_name]}
                 if q_load_df is not None:
-                    QD = {'data type':'time_series','values':q_load_df[bus_name]}
+                    QD = {"data type": "time_series", "values": q_load_df[bus_name]}
 
                 load_dict = {
                     "bus": bus_name,
-                    "in_service": row['in_service'],
+                    "in_service": row["in_service"],
                     "p_load": PD,
                     "q_load": QD,
                     "area": row["area"],
@@ -214,7 +221,7 @@ class NCDataProvider:
                 }
                 elements["load"][bus_name] = load_dict
 
-        #add filler valyes for reference buses
+        # add filler valyes for reference buses
         system["reference_bus"] = None
         system["reference_bus_angle"] = 0
 
@@ -227,7 +234,6 @@ class NCDataProvider:
         if not os.path.exists(file_path):
             raise ValueError(f'NC Data File "{file_path}" does not exist')
         branch_df = pd.read_csv(file_path)
-
 
         for idx, row in branch_df.iterrows():
 
@@ -247,10 +253,10 @@ class NCDataProvider:
                 "qf": None,
                 "pt": None,
                 "qt": None,
-                "branch_type" : "line",
+                "branch_type": "line",
                 "capital_cost": float(row["capital_cost"]),
                 "distance": float(row["length"]),
-                "loss_rate": float(row['loss_rate']),
+                "loss_rate": float(row["loss_rate"]),
                 # extra columns
                 "carrier": str(row["Carrier"]),
                 "s_max_pu": float(row["s_max_pu"]),
@@ -274,26 +280,26 @@ class NCDataProvider:
                     "rating_long_term": float(row["LTE Rating"]),
                     "rating_short_term": float(row["STE Rating"]),
                     "rating_emergency": float(row["Cont Rating"]),
-                    "capital_cost": str(row['capital_cost']),
-                    "distance": str(row['length']),
-                    "loss_rate": float(row['loss_rate']),
+                    "capital_cost": str(row["capital_cost"]),
+                    "distance": str(row["length"]),
+                    "loss_rate": float(row["loss_rate"]),
                     # extra columns
-                    "carrier": str(row['Carrier']),
-                    "lifetime": str(row['lifetime']),
-                    "underground": str(row['underground']),
-                    "under_construction": bool(row['under_construction']),
-                    "tags": row['tags'],
-                    "geometry": row['geometry'],
-                    "underwater_fraction": float(row['underwater_fraction']),
-                    "p_nom_extendable": bool(row['p_nom_extendable']),
-                    "p_min_pu": float(row['p_min_pu']),
+                    "carrier": str(row["Carrier"]),
+                    "lifetime": str(row["lifetime"]),
+                    "underground": str(row["underground"]),
+                    "under_construction": bool(row["under_construction"]),
+                    "tags": row["tags"],
+                    "geometry": row["geometry"],
+                    "underwater_fraction": float(row["underwater_fraction"]),
+                    "p_nom_extendable": bool(row["p_nom_extendable"]),
+                    "p_min_pu": float(row["p_min_pu"]),
                 }
                 name = str(row["UID"])
                 elements["dc_branch"][name] = dc_branch_dict
 
     def _read_generators(self, base_dir: str, elements: dict[str, any]) -> None:
         """Read generator data."""
-        RENEWABLE_TYPES = ['GEO', 'PV','WIND','ROR','HYDRO','RTPV']
+        RENEWABLE_TYPES = ["GEO", "PV", "WIND", "ROR", "HYDRO", "RTPV"]
 
         file_path = os.path.join(base_dir, "gen.csv")
         p_fuel_file = os.path.join(base_dir, "p_fuel.csv")
@@ -308,13 +314,13 @@ class NCDataProvider:
                 p_fuel_df = pd.read_csv(p_fuel_file)
             if os.path.exists(file_path):
                 p_cost_df = pd.read_csv(p_cost_file)
-        
+
             for idx, row in gen_df.iterrows():
 
                 name = str(row["GEN UID"])
                 bus_name = str(row["Bus ID"])
                 in_service_flag = True
-                if '-c' in name:
+                if "-c" in name:
                     in_service_flag = False
                 gen_dict = {
                     "bus": bus_name,
@@ -332,24 +338,27 @@ class NCDataProvider:
                     "area": elements["bus"][bus_name]["area"],
                     "zone": elements["bus"][bus_name]["zone"],
                     # extra
-                    "investment_cost": float(row['capital_cost']),
-                    "emissions_factor": float(row['emissions_factor']),
-                    "lifetime": float(row['lifetime']),
-                    "efficiency": float(row['efficiency']),
-                    "weight": row['weight'],
-                    "p_nom_min": float(row['p_nom_min']),
-                    "p_nom_max": row['p_nom_max'],
-                    "p_max_pu": float(row['p_max_pu']),
+                    "investment_cost": float(row["capital_cost"]),
+                    "emissions_factor": float(row["emissions_factor"]),
+                    "lifetime": float(row["lifetime"]),
+                    "efficiency": float(row["efficiency"]),
+                    "weight": row["weight"],
+                    "p_nom_min": float(row["p_nom_min"]),
+                    "p_nom_max": row["p_nom_max"],
+                    "p_max_pu": float(row["p_max_pu"]),
                 }
 
-                gen_dict['p_fuel'] = {}
-                gen_dict['p_cost'] = {}
+                gen_dict["p_fuel"] = {}
+                gen_dict["p_cost"] = {}
 
                 UNIT_TYPE = str(row["Unit Type"])
                 if UNIT_TYPE in RENEWABLE_TYPES:
                     gen_dict["generator_type"] = "renewable"
                     if p_fuel_df is not None:
-                        gen_dict['p_fuel'] = {'data_type':'fuel_curve','values':p_fuel_df.get(name, [])}
+                        gen_dict["p_fuel"] = {
+                            "data_type": "fuel_curve",
+                            "values": p_fuel_df.get(name, []),
+                        }
                     # ROR is treated as HYDRO by Egret
                     if UNIT_TYPE == "ROR":
                         gen_dict["unit_type"] = "HYDRO"
@@ -357,11 +366,14 @@ class NCDataProvider:
                     gen_dict["generator_type"] = "thermal"
                     if p_cost_df is not None:
                         gen_name = name
-                        if '-c' in name:
+                        if "-c" in name:
                             gen_name = name[:-2]
-                        gen_dict['p_cost'] = {'data_type':'cost_data','values':p_cost_df.get(gen_name, [])}
+                        gen_dict["p_cost"] = {
+                            "data_type": "cost_data",
+                            "values": p_cost_df.get(gen_name, []),
+                        }
 
-                #set defaults
+                # set defaults
                 gen_dict["spinning_reserve_frac"] = 0.1
                 gen_dict["quickstart_reserve_frac"] = 0.1
                 gen_dict["capital_multiplier"] = 1
@@ -372,7 +384,7 @@ class NCDataProvider:
                 gen_dict["ramp_up_rate"] = 0.1
                 gen_dict["ramp_down_rate"] = 0.1
                 gen_dict["start_fuel"] = 1
-                gen_dict['heat_rate']=1
+                gen_dict["heat_rate"] = 1
 
                 fixed_startup_cost = float(row["Non Fuel Start Cost $"])
                 if not isnan(fixed_startup_cost):
@@ -418,39 +430,42 @@ class NCDataProvider:
         if not os.path.exists(file_path):
             raise ValueError(f'NC Data File "{file_path}" does not exist')
         store_df = pd.read_csv(file_path)
-    
-        for idx, row in store_df.iterrows():
-            storage_dict = {
-                'bus' : row['bus'],
-                'generator_type' :row['generator'],
-                'storage_type' :row['storage_type'],
-                'energy_capacity' :row['energy_capacity'],
-                'initial_state_of_charge' :row['initial_state_of_charge'],
-                'end_state_of_charge' :row['end_state_of_charge'],
-                'minimum_state_of_charge' :row['minimum_state_of_charge'],
-                'charge_efficiency' :row['charge_efficiency'],
-                'discharge_efficiency' :row['discharge_efficiency'],
-                'max_discharge_rate' :row['max_discharge_rate'],
-                'min_discharge_rate' :row['min_discharge_rate'],
-                'max_charge_rate' :row['max_charge_rate'],
-                'min_charge_rate' :row['min_charge_rate'],
-                'initial_charge_rate' :row['initial_charge_rate'],
-                'initial_discharge_rate' :row['initial_discharge_rate'],
-                'charge_cost' :row['charge_cost'],
-                'discharge_cost' :row['discharge_cost'],
-                'retention_rate_60min' :row['retention_rate_60min'],
-                'ramp_up_input_60min' :row['ramp_up_input_60min'],
-                'ramp_down_input_60min' :row['ramp_down_input_60min'],
-                'ramp_up_output_60min' :row['ramp_up_output_60min'],
-                'ramp_down_output_60min' :row['ramp_down_output_60min'],
-                'in_service' :row['in_service'],
-                'capital_multiplier' :row['capital_multiplier'],
-                'extension_multiplier' :row['extension_multiplier'],
-                'investment_cost' :row['investment_cost'],
-                'investment_cost_kwh' :row['investment_cost_kwh'],
-            }
 
-            elements["storage"][row['name']] = storage_dict
+        for idx, row in store_df.iterrows():
+
+            storage_dict = {
+                "bus": row["bus"],
+                "generator_type": row["generator"],
+                "storage_type": row["storage_type"],
+                "energy_capacity": row["energy_capacity"],
+                "initial_state_of_charge": row["initial_state_of_charge"],
+                "end_state_of_charge": row["end_state_of_charge"],
+                "minimum_state_of_charge": row["minimum_state_of_charge"],
+                "charge_efficiency": row["charge_efficiency"],
+                "discharge_efficiency": row["discharge_efficiency"],
+                "max_discharge_rate": row["max_discharge_rate"],
+                "min_discharge_rate": row["min_discharge_rate"],
+                "max_charge_rate": row["max_charge_rate"],
+                "min_charge_rate": row["min_charge_rate"],
+                "initial_charge_rate": row["initial_charge_rate"],
+                "initial_discharge_rate": row["initial_discharge_rate"],
+                "charge_cost": row["charge_cost"],
+                "discharge_cost": row["discharge_cost"],
+                "retention_rate_60min": row["retention_rate_60min"],
+                "ramp_up_input_60min": row["ramp_up_input_60min"],
+                "ramp_down_input_60min": row["ramp_down_input_60min"],
+                "ramp_up_output_60min": row["ramp_up_output_60min"],
+                "ramp_down_output_60min": row["ramp_down_output_60min"],
+                "in_service": row["in_service"],
+                "capital_multiplier": 1,  # default value for now
+                "extension_multiplier": 1,  # default value for now
+                "investment_cost": row["investment_cost"],
+                "investment_cost_kwh": row["investment_cost_kwh"],
+            }
+            if "hydro" in row["name"]:
+                continue
+            else:
+                elements["storage"][row["name"]] = storage_dict
 
     def _read_timeseries_data(
         self,
@@ -466,16 +481,18 @@ class NCDataProvider:
         :rtype: list[str]
         """
         time_series_df = pd.read_csv(os.path.join(nc_data_dir, "time_series.csv"))
-        time_series_df['datetime'] = pd.to_datetime(time_series_df[['Year', 'Month', 'Day', 'Hour']])
+        time_series_df["datetime"] = pd.to_datetime(
+            time_series_df[["Year", "Month", "Day", "Hour"]]
+        )
         time_keys = []
         for idx, row in time_series_df.iterrows():
-            #only append if it is within the target time range
-            if start_time <= row['datetime'] <= end_time:
-                time = f'{row['Year']}-{row['Month']:02d}-{row['Day']:02d} {row['Hour']:02d}:00'
+            # only append if it is within the target time range
+            if start_time <= row["datetime"] <= end_time:
+                time = f"{row['Year']}-{row['Month']:02d}-{row['Day']:02d} {row['Hour']:02d}:00"
                 time_keys.append(time)
 
-        system['time_keys'] = time_keys
-        system['time_period_length_minutes'] = minutes_per_period
+        system["time_keys"] = time_keys
+        system["time_period_length_minutes"] = minutes_per_period
 
         return time_keys
 
@@ -508,14 +525,13 @@ class NCDataProvider:
             "REAL TIME": int(metadata_df.loc["Period Resolution", "REAL TIME"]) // 60,
         }
 
-        #TODO maybe check if start and end are within the data start and data end
+        # TODO maybe check if start and end are within the data start and data end
 
         self._read_timeseries_data(
-            model_data['system'], nc_data_dir, begin_time, end_time, minutes_per_period
+            model_data["system"], nc_data_dir, begin_time, end_time, minutes_per_period
         )
-        #add defaults
-        model_data['system']['min_operating_reserve'] = 0.1
-        model_data['system']['min_spinning_reserve'] = 0.1
+        # add defaults
+        model_data["system"]["min_operating_reserve"] = 0.1
+        model_data["system"]["min_spinning_reserve"] = 0.1
 
         return model_data
-
