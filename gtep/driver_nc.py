@@ -52,9 +52,17 @@ mod_object.create_model()
 # pyo.TransformationFactory("gdp.bound_pretransformation").apply_to(mod_object.model)
 pyo.TransformationFactory("gdp.bigm").apply_to(mod_object.model)
 
+mps_path = "ant_model.mps"
+
+mod_object.model.write(
+    filename=mps_path,
+    format="mps",
+    # io_options={"symbolic_solver_labels": True},
+)
+
 # Add solver
-opt = pyo.SolverFactory("gurobi")
-# opt = pyo.SolverFactory("highs")
+# opt = pyo.SolverFactory("gurobi")
+opt = pyo.SolverFactory("highs")
 
 mod_object.results = opt.solve(mod_object.model, tee=True)
 print(mod_object.results)
