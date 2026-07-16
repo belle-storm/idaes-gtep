@@ -25,6 +25,7 @@ from gtep.gtep_data import ExpansionPlanningData
 from gtep.nc_data_importer.nc_data_importer import NCDataProvider
 from egret.data.model_data import ModelData as EgretModel
 import random
+import numpy as np
 import logging
 
 logger = logging.getLogger("gtep.gtep_data")
@@ -255,4 +256,164 @@ class NCExpansionPlanningData(ExpansionPlanningData):
 
         self._build_rep_dates(representative_dates, representative_weights, options_dict['num_days'], periods_per_step)
         
+    def scale_load_by_region(self, region_dict: dict[str, float]) -> None:
+        """
+        Scale the load of every bus in a region by a set percentage.
+
+        :param region_dict: Mapping of region name to scaling factor.
+        :type region_dict: dict[str, float]
+        :returns: None
+        :rtype: None
+        """
+        #grab relevant data pieces
+        areas = self.md['elements']['area']
+        loads = self.md['elements']['load']
+        #iterate through regions in input
+        for region, val in region_dict.items():
+            #check that the region is one of the accepted regions
+            if region not in areas:
+                print(f'{region} not in matching region list for the data. Skipping')
+                continue
+            #iterate through load buses
+            for load_dict in loads.values():
+                #check that the region matches this load bus area
+                if region == load_dict['area']:
+                    #convert load values to numpy array
+                    load_vals = np.array(load_dict['p_load']['values'])
+                    #scale by region amount
+                    load_vals_scaled = load_vals * val
+                    #reassign the scaled version to the bus load values
+                    load_dict['p_load']['values'] = list(load_vals_scaled)
+
+    def scale_load_by_bus(self, bus_dict: dict[str, float | list[float]], add_new_bus: bool = True) -> None:
+        """
+        Scale the loads of a bus.
+
+        :param bus_dict: Mapping of bus name to either a scalar value to add
+                        or a list of load values.
+        :type bus_dict: dict[str, float | list[float]]
+        :param add_new_bus: If True, create a new load entry for a matching bus
+                            that does not already have load data.
+        :type add_new_bus: bool
+        :returns: None
+        :rtype: None
+        """
+        loads = self.md['elements']['load']
+        buses = self.md['elements']['bus']
+       
+        for bus_name, val in bus_dict.items():
+            if bus_name not in loads.keys():
+                if add_new_bus:
+                    if bus_name not in buses.keys():
+                        print(f'{bus_name} not in loads or full bus list. Skipping')
+                        continue
+                    else:
+                        #add a new load bus
+                        #if value is a single item
+                        if isinstance(val, float):
+                            #get an idea of the number of p_load values we need
+                            first_key = next(iter(loads))
+                            num_load_vals = len(loads[first_key]['p_load']['values'])
+                            #get a full list of new values
+                            new_vals = [val]* num_load_vals
+                        else:
+                            new_vals = val
+                        load_dict = {
+                            "bus": bus_name,
+                            "in_service": True,
+                            "p_load": {'data_type': 'time_series', 'values': new_vals},
+                            "q_load": {},
+                            "area": buses[bus_name]["area"],
+                            "zone": buses[bus_name]["zone"],
+                        }
+                        self.md['elements']["load"][bus_name] = load_dict
+
+                print(f'{bus_name} not in loads. Skipping')
+                continue
+            else:
+                load_vals = np.array(loads[bus_name]['p_load']['values'])
+                load_vals_scaled = load_vals + val
+                loads[bus_name]['p_load']['values'] = load_vals_scaled
+
+    def replace_load_by_bus(self, bus_dict: dict[str, list[float]]) -> None:
+        """
+        Replace the loads of a bus.
+
+        :param bus_dict: Mapping of bus name to the new list of load values.
+        :type bus_dict: dict[str, list[float]]
+        :returns: None
+        :rtype: None
+        """
+        loads = self.md['elements']['load']
+       
+        for bus_name, val in bus_dict.items():
+            if bus_name not in loads.keys():
+                print(f'{bus_name} not in loads. Skipping')
+                continue
+            loads[bus_name]['p_load']['values'] = val
+
+    def scale_reactance(
+        self,
+        func: function,
+        lines: dict[str, float],
+        **kwargs,
+    ) -> None:
+        """
+        Scale the reactance of lines based on the distance between line end points.
+
+        :param func: Function used to apply the scaling.
+        :type func: Callable[..., float]
+        :param lines: Mapping of branch name to scaling value.
+        :type lines: dict[str, float]
+        :param kwargs: Additional keyword arguments passed to ``func``.
+        :returns: None
+        :rtype: None
+        """
+        branch = self.md['elements']['branch']
+        #iterate through target lines to apply scaling function
+        for line, val in lines.items():
+            if line not in branch.keys():
+                print(f'{line} is not matching any of the existing branches. Skipping')
+                continue
+            branch[line]['reactance'] = func(reactance= branch[line]['reactance'], distance= branch[line]['distance'], value=val **kwargs)
+
+    def scale_line_capacity_by_region(self, region_dict: dict[str, float]) -> None:
+        """
+        Scale the capacity of the branch by the from-bus region.
+
+        :param region_dict: Mapping of region name to capacity scaling value.
+        :type region_dict: dict[str, float]
+        :returns: None
+        :rtype: None
+        """
+        branch = self.md['elements']['branch']
+        #iterate through target regions to apply scaling function
+        for region, val in region_dict.items():
+            for br_data in branch.items():
+                if region in br_data['from_bus']:
+                    #add scaling value to this branch's value
+                    br_data['rating_long_term'] += val
+
+
+    def change_generation(
+        self,
+        func: function,
+        gen_type: str,
+        **kwargs
+    ) -> None:
+        """
+        Change generation values for generators of a given type.
+
+        :param func: Function used to transform generator values.
+        :type func: Callable[..., float]
+        :param gen_type: Generator type to modify. Should be 'thermal' or 'renewable'
+        :type gen_type: str
+        :param kwargs: Additional keyword arguments passed to ``func``.
+        :returns: None
+        :rtype: None
+        """
+        gens = self.md['elements']['generator']
+        for g_data in gens.values():
+            if g_data['generator_type'] == gen_type:
+                g_data['p_max'] = func(gen_val = g_data['p_max'], **kwargs) #renewables should be time series
 
