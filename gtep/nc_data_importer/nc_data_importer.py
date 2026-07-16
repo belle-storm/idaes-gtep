@@ -24,6 +24,7 @@ import egret.data.model_data as md
 from datetime import datetime, timedelta
 import os
 import pandas as pd
+import numpy as np
 from math import isnan
 
 
@@ -203,6 +204,9 @@ class NCDataProvider:
 
             for idx, row in load_df.iterrows():
                 bus_name = str(row["bus"])
+                area = row["area"]
+                if np.isnan(area):
+                    area = bus_name.split(' ')[0]
                 # format load dictionaries
                 PD = {}
                 QD = {}
