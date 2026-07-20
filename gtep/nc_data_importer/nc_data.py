@@ -47,6 +47,7 @@ class NCExpansionPlanningData(ExpansionPlanningData):
     :param duration_dispatch: Duration of each dispatch period in minutes.
     :type duration_dispatch: int
     """
+
     def __init__(
         self,
         stages: int = 2,
@@ -90,7 +91,7 @@ class NCExpansionPlanningData(ExpansionPlanningData):
         time_keys = self.md.data["system"]["time_keys"]
 
         if dates is None:
-            available_day_starts = time_keys[::int(period_per_step)]
+            available_day_starts = time_keys[:: int(period_per_step)]
 
             if len(available_day_starts) < self.num_reps:
                 raise ValueError(
@@ -146,9 +147,7 @@ class NCExpansionPlanningData(ExpansionPlanningData):
 
             # Validate that all user-provided representative dates
             # exist in the loaded day-ahead timestamps.
-            missing_dates = [
-                date for date in dates if date not in time_keys
-            ]
+            missing_dates = [date for date in dates if date not in time_keys]
             if missing_dates:
                 raise ValueError(
                     "The following representative_dates are not valid timestamps in the "
@@ -170,9 +169,7 @@ class NCExpansionPlanningData(ExpansionPlanningData):
                 )
 
             # Store as a dictionary
-            self.representative_weights_dict = dict(
-                zip(dates, weights)
-            )
+            self.representative_weights_dict = dict(zip(dates, weights))
 
         else:
             # Set weight for each representative day to default value
@@ -225,20 +222,22 @@ class NCExpansionPlanningData(ExpansionPlanningData):
         """
 
         if options_dict is None:
-            options_dict = {"data_path": nc_file, 'num_days':365}
+            options_dict = {"data_path": nc_file, "num_days": 365}
         else:
             options_dict["data_path"] = nc_file
-            if 'num_days' not in options_dict.keys():
+            if "num_days" not in options_dict.keys():
                 options_dict["num_days"] = 365
 
-        #import data 
+        # import data
         data_provider = NCDataProvider(options=options_dict)
 
-        #format as egret model
+        # format as egret model
         data = data_provider._cache
         self.md = EgretModel(data)
 
-        periods_per_step = data_provider.metadata_df.loc["Periods_per_Step"]["REAL TIME"]
+        periods_per_step = data_provider.metadata_df.loc["Periods_per_Step"][
+            "REAL TIME"
+        ]
 
         thermal_heat_rates = [
             self.md.data["elements"]["generator"][gen].get("heat_rate", 0)
@@ -254,8 +253,13 @@ class NCExpansionPlanningData(ExpansionPlanningData):
                 "heat_rate, so resulting fuel costs will all be 0."
             )
 
-        self._build_rep_dates(representative_dates, representative_weights, options_dict['num_days'], periods_per_step)
-        
+        self._build_rep_dates(
+            representative_dates,
+            representative_weights,
+            options_dict["num_days"],
+            periods_per_step,
+        )
+
     def scale_load_by_region(self, region_dict: dict[str, float]) -> None:
         """
         Scale the load of every bus in a region by a set percentage.
@@ -265,27 +269,29 @@ class NCExpansionPlanningData(ExpansionPlanningData):
         :returns: None
         :rtype: None
         """
-        #grab relevant data pieces
-        areas = self.md['elements']['area']
-        loads = self.md['elements']['load']
-        #iterate through regions in input
+        # grab relevant data pieces
+        areas = self.md["elements"]["area"]
+        loads = self.md["elements"]["load"]
+        # iterate through regions in input
         for region, val in region_dict.items():
-            #check that the region is one of the accepted regions
+            # check that the region is one of the accepted regions
             if region not in areas:
-                print(f'{region} not in matching region list for the data. Skipping')
+                print(f"{region} not in matching region list for the data. Skipping")
                 continue
-            #iterate through load buses
+            # iterate through load buses
             for load_dict in loads.values():
-                #check that the region matches this load bus area
-                if region == load_dict['area']:
-                    #convert load values to numpy array
-                    load_vals = np.array(load_dict['p_load']['values'])
-                    #scale by region amount
+                # check that the region matches this load bus area
+                if region == load_dict["area"]:
+                    # convert load values to numpy array
+                    load_vals = np.array(load_dict["p_load"]["values"])
+                    # scale by region amount
                     load_vals_scaled = load_vals * val
-                    #reassign the scaled version to the bus load values
-                    load_dict['p_load']['values'] = list(load_vals_scaled)
+                    # reassign the scaled version to the bus load values
+                    load_dict["p_load"]["values"] = list(load_vals_scaled)
 
-    def scale_load_by_bus(self, bus_dict: dict[str, float | list[float]], add_new_bus: bool = True) -> None:
+    def scale_load_by_bus(
+        self, bus_dict: dict[str, float | list[float]], add_new_bus: bool = True
+    ) -> None:
         """
         Scale the loads of a bus.
 
@@ -298,42 +304,45 @@ class NCExpansionPlanningData(ExpansionPlanningData):
         :returns: None
         :rtype: None
         """
-        loads = self.md['elements']['load']
-        buses = self.md['elements']['bus']
-       
+        loads = self.md["elements"]["load"]
+        buses = self.md["elements"]["bus"]
+
         for bus_name, val in bus_dict.items():
             if bus_name not in loads.keys():
                 if add_new_bus:
                     if bus_name not in buses.keys():
-                        print(f'{bus_name} not in loads or full bus list. Skipping')
+                        logger.info(
+                            f"{bus_name} not in loads or full bus list. Skipping"
+                        )
+                        print(f"{bus_name} not in loads or full bus list. Skipping")
                         continue
                     else:
-                        #add a new load bus
-                        #if value is a single item
+                        # add a new load bus
+                        # if value is a single item
                         if isinstance(val, float):
-                            #get an idea of the number of p_load values we need
+                            # get an idea of the number of p_load values we need
                             first_key = next(iter(loads))
-                            num_load_vals = len(loads[first_key]['p_load']['values'])
-                            #get a full list of new values
-                            new_vals = [val]* num_load_vals
+                            num_load_vals = len(loads[first_key]["p_load"]["values"])
+                            # get a full list of new values
+                            new_vals = [val] * num_load_vals
                         else:
                             new_vals = val
                         load_dict = {
                             "bus": bus_name,
                             "in_service": True,
-                            "p_load": {'data_type': 'time_series', 'values': new_vals},
+                            "p_load": {"data_type": "time_series", "values": new_vals},
                             "q_load": {},
                             "area": buses[bus_name]["area"],
                             "zone": buses[bus_name]["zone"],
                         }
-                        self.md['elements']["load"][bus_name] = load_dict
-
-                print(f'{bus_name} not in loads. Skipping')
+                        self.md["elements"]["load"][bus_name] = load_dict
+                logger.info(f"{bus_name} not in loads. Skipping")
+                print(f"{bus_name} not in loads. Skipping")
                 continue
             else:
-                load_vals = np.array(loads[bus_name]['p_load']['values'])
+                load_vals = np.array(loads[bus_name]["p_load"]["values"])
                 load_vals_scaled = load_vals + val
-                loads[bus_name]['p_load']['values'] = load_vals_scaled
+                loads[bus_name]["p_load"]["values"] = load_vals_scaled
 
     def replace_load_by_bus(self, bus_dict: dict[str, list[float]]) -> None:
         """
@@ -344,13 +353,14 @@ class NCExpansionPlanningData(ExpansionPlanningData):
         :returns: None
         :rtype: None
         """
-        loads = self.md['elements']['load']
-       
+        loads = self.md["elements"]["load"]
+
         for bus_name, val in bus_dict.items():
             if bus_name not in loads.keys():
-                print(f'{bus_name} not in loads. Skipping')
+                logger.info(f"{bus_name} not in loads. Skipping")
+                print(f"{bus_name} not in loads. Skipping")
                 continue
-            loads[bus_name]['p_load']['values'] = val
+            loads[bus_name]["p_load"]["values"] = val
 
     def scale_reactance(
         self,
@@ -369,13 +379,20 @@ class NCExpansionPlanningData(ExpansionPlanningData):
         :returns: None
         :rtype: None
         """
-        branch = self.md['elements']['branch']
-        #iterate through target lines to apply scaling function
+        branch = self.md["elements"]["branch"]
+        # iterate through target lines to apply scaling function
         for line, val in lines.items():
             if line not in branch.keys():
-                print(f'{line} is not matching any of the existing branches. Skipping')
+                logger.info(
+                    f"{line} is not matching any of the existing branches. Skipping"
+                )
+                print(f"{line} is not matching any of the existing branches. Skipping")
                 continue
-            branch[line]['reactance'] = func(reactance= branch[line]['reactance'], distance= branch[line]['distance'], value=val **kwargs)
+            branch[line]["reactance"] = func(
+                reactance=branch[line]["reactance"],
+                distance=branch[line]["distance"],
+                value=val**kwargs,
+            )
 
     def scale_line_capacity_by_region(self, region_dict: dict[str, float]) -> None:
         """
@@ -386,20 +403,15 @@ class NCExpansionPlanningData(ExpansionPlanningData):
         :returns: None
         :rtype: None
         """
-        branch = self.md['elements']['branch']
-        #iterate through target regions to apply scaling function
+        branch = self.md["elements"]["branch"]
+        # iterate through target regions to apply scaling function
         for region, val in region_dict.items():
             for br_data in branch.items():
-                if region in br_data['from_bus']:
-                    #add scaling value to this branch's value
-                    br_data['rating_long_term'] += val
+                if region in br_data["from_bus"]:
+                    # add scaling value to this branch's value
+                    br_data["rating_long_term"] += val
 
-    def change_generation(
-        self,
-        func: function,
-        gen_type: str,
-        **kwargs
-    ) -> None:
+    def change_generation(self, func: function, gen_type: str, **kwargs) -> None:
         """
         Change generation values for generators of a given type.
 
@@ -411,8 +423,9 @@ class NCExpansionPlanningData(ExpansionPlanningData):
         :returns: None
         :rtype: None
         """
-        gens = self.md['elements']['generator']
+        gens = self.md["elements"]["generator"]
         for g_data in gens.values():
-            if g_data['generator_type'] == gen_type:
-                g_data['p_max'] = func(gen_val = g_data['p_max'], **kwargs) #renewables should be time series
-
+            if g_data["generator_type"] == gen_type:
+                g_data["p_max"] = func(
+                    gen_val=g_data["p_max"], **kwargs
+                )  # renewables should be time series
