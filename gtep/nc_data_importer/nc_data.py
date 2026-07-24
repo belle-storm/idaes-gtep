@@ -364,7 +364,7 @@ class NCExpansionPlanningData(ExpansionPlanningData):
 
     def scale_reactance(
         self,
-        func: function,
+        func: callable,
         lines: dict[str, float],
         **kwargs,
     ) -> None:
@@ -411,7 +411,7 @@ class NCExpansionPlanningData(ExpansionPlanningData):
                     # add scaling value to this branch's value
                     br_data["rating_long_term"] += val
 
-    def change_generation(self, func: function, gen_type: str, **kwargs) -> None:
+    def change_generation(self, func: callable, gen_type: str, **kwargs) -> None:
         """
         Change generation values for generators of a given type.
 

@@ -160,8 +160,8 @@ class NCDataProvider:
         for idx, row in bus_df.iterrows():
 
             bus_name = str(row["Bus Name"])
-            area = row["area"]
-            if np.isnan(area):
+            area = row["Area"]
+            if pd.isna(area):
                 area = bus_name.split(' ')[0]
             bus_dict = {
                 "id": str(row["Bus ID"]),
