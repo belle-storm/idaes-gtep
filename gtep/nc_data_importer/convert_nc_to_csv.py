@@ -106,7 +106,7 @@ def bus_df(bus_data, load_data):
         # sve p_load
         if name in load_data["t_p_set_i"]:
             p_load_ix = list(load_data["t_p_set_i"]).index(name)
-            p_load[name] = list(load_data["t_p_set"][p_load_ix])
+            p_load[name] = list(load_data["t_p_set"][:, p_load_ix])
         q_load[name] = [np.nan]
 
     # TODO update bus read function
