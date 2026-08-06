@@ -74,6 +74,6 @@ sol_object.load_from_model(mod_object)
 sol_object.dump_json("./gtep_solution.json")
 sol_object.import_data_object(data_object)
 
-sol_object.plot_levels(save_dir="./plots/")
+# sol_object.plot_levels(save_dir="./plots/")
 
 pass
