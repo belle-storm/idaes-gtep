@@ -94,7 +94,7 @@ def bus_df(bus_data, load_data):
     }
     p_load = {}
     q_load = {}
-
+    q_load_num = 1
     for ix, name in enumerate(load_data["i"]):
         bus_idx = list(bus_data["i"]).index(name)
         # assign to dictionary
@@ -107,9 +107,8 @@ def bus_df(bus_data, load_data):
         if name in load_data["t_p_set_i"]:
             p_load_ix = list(load_data["t_p_set_i"]).index(name)
             p_load[name] = list(load_data["t_p_set"][:, p_load_ix])
-        q_load[name] = [np.nan]
-
-    # TODO update bus read function
+            q_load_num = len(list(load_data["t_p_set"][:, p_load_ix]))
+        q_load[name] = [np.nan] * q_load_num
 
     bus_df = pd.DataFrame(bus_dict)
     load_df = pd.DataFrame(loads_dict)
