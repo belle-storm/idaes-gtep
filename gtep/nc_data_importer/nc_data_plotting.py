@@ -509,6 +509,125 @@ def plot_grid(zone_data, bus_data=None, branch_data=None):
     plt.savefig("zones_and_components.png", dpi=300, bbox_inches="tight")
     plt.close()
 
+import plotly.graph_objects as go
+
+
+def plot_zones_and_buses_mapbox(zone_data, bus_positions, zone_colors=None, map_style="open-street-map"):
+    """
+    Plot MultiPolygon zones and bus points on a Mapbox/Plotly map.
+
+    Parameters
+    ----------
+    zone_data : dict
+        {
+            zone_name: {
+                "coordinates": multipolygon_coords,  # GeoJSON-style lon/lat
+                "centroid": (lon, lat)
+            }
+        }
+    bus_positions : dict
+        {
+            bus_name: (lon, lat)
+        }
+    zone_colors : dict, optional
+        {zone_name: "rgba(...)" or hex color}
+    map_style : str
+        Plotly map style, e.g.:
+        - "open-street-map"
+        - "carto-positron"
+        - "carto-darkmatter"
+        - "streets"
+        - "outdoors"
+        - "satellite"
+    """
+    fig = go.Figure()
+
+    # Add zones as filled polygon traces
+    for i, (zone_name, zone_info) in enumerate(zone_data.items()):
+        coords = zone_info["coordinates"]
+        color = zone_colors.get(zone_name, None) if zone_colors else None
+        if color is None:
+            color = f"rgba({50 + (i*40)%200}, {100 + (i*70)%155}, {180 + (i*30)%75}, 0.35)"
+
+        # MultiPolygon -> multiple polygon parts
+        for poly in coords:
+            if not poly or not poly[0]:
+                continue
+
+            outer_ring = poly[0]
+            lons = [pt[0] for pt in outer_ring]
+            lats = [pt[1] for pt in outer_ring]
+
+            # Close ring if needed
+            if lons[0] != lons[-1] or lats[0] != lats[-1]:
+                lons.append(lons[0])
+                lats.append(lats[0])
+
+            fig.add_trace(go.Scattermapbox(
+                lon=lons,
+                lat=lats,
+                mode="lines",
+                fill="toself",
+                fillcolor=color,
+                line=dict(color="black", width=1),
+                name=zone_name,
+                hoverinfo="text",
+                text=zone_name,
+                showlegend=True
+            ))
+
+    # Add bus points
+    bus_lons = []
+    bus_lats = []
+    bus_text = []
+
+    for bus_name, (lon, lat) in bus_positions.items():
+        bus_lons.append(lon)
+        bus_lats.append(lat)
+        bus_text.append(bus_name)
+
+    fig.add_trace(go.Scattermapbox(
+        lon=bus_lons,
+        lat=bus_lats,
+        mode="markers+text",
+        marker=dict(size=10, color="red"),
+        text=bus_text,
+        textposition="top center",
+        name="Buses"
+    ))
+
+    # Center map on data
+    all_lons = []
+    all_lats = []
+
+    for zone_info in zone_data.values():
+        for poly in zone_info["coordinates"]:
+            if not poly or not poly[0]:
+                continue
+            for pt in poly[0]:
+                all_lons.append(pt[0])
+                all_lats.append(pt[1])
+
+    all_lons.extend(bus_lons)
+    all_lats.extend(bus_lats)
+
+    if all_lons and all_lats:
+        center_lon = sum(all_lons) / len(all_lons)
+        center_lat = sum(all_lats) / len(all_lats)
+    else:
+        center_lon, center_lat = 0, 0
+
+    fig.update_layout(
+        mapbox=dict(
+            style=map_style,
+            center=dict(lon=center_lon, lat=center_lat),
+            zoom=8
+        ),
+        margin=dict(l=0, r=0, t=30, b=0),
+        title="Zones and Buses on Mapbox"
+    )
+
+    fig.show()
 
 if __name__ == "__main__":
     # read location data
@@ -534,7 +653,7 @@ if __name__ == "__main__":
 
     # grab grid data elements
     grid_data = data_object.md.data
-    bus_data = grid_data["elements"]["bus"]
+    bus_data = grid_data['elements']["bus"]
     branch_data = grid_data["elements"]["branch"]
 
     # grab list of zones we need with a list of buses associated
@@ -561,5 +680,5 @@ if __name__ == "__main__":
 
     branch_by_centroid = assign_loc_to_branches(branch_data, bus_by_centroid)
 
-    plot_grid(filt_zone, bus_by_centroid, branch_by_centroid)
+    plot_zones_and_buses_mapbox(filt_zone, bus_by_centroid)
     pass
