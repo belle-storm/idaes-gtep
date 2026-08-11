@@ -6,6 +6,7 @@ from gtep.nc_data_importer.nc_data import NCExpansionPlanningData
 import colorsys
 import random
 import math
+import plotly.graph_objects as go
 
 
 def read_geojson(filepath):
@@ -509,8 +510,6 @@ def plot_grid(zone_data, bus_data=None, branch_data=None):
     plt.savefig("zones_and_components.png", dpi=300, bbox_inches="tight")
     plt.close()
 
-import plotly.graph_objects as go
-
 
 def plot_zones_and_buses_mapbox(zone_data, bus_positions, zone_colors=None, map_style="open-street-map"):
     """
@@ -628,6 +627,8 @@ def plot_zones_and_buses_mapbox(zone_data, bus_positions, zone_colors=None, map_
     )
 
     fig.show()
+
+
 
 if __name__ == "__main__":
     # read location data
