@@ -160,93 +160,216 @@ def calculate_zone_centroids_from_geojson(geojson_data, zone_name_key="countryKe
     return centroids
 
 
+def jitter_pattern(center, n, scale):
+    """
+    Deterministic offsets around a center point.
+    """
+    cx, cy = center
+    pts = []
+    for i in range(n):
+        angle = 2 * math.pi * i / max(n, 1)
+        r = scale * (1 + 0.15 * (i % 3))
+        pts.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
+    return pts
+
+
+def normalize_pt(pt):
+    return (round(pt[0], 10), round(pt[1], 10))
+
+
+def get_outer_rings_from_multipolygon(multipolygon_coords):
+    """
+    Extract outer rings from a GeoJSON MultiPolygon coordinate structure.
+    Returns a list of flat rings.
+    """
+    return [polygon[0] for polygon in multipolygon_coords if polygon and polygon[0]]
+
+
 def point_in_polygon(x, y, polygon):
     """
-    Determine whether a point is inside a polygon using ray casting.
-
-    Parameters
-    ----------
-    x, y : float
-        Point coordinates.
-    polygon : list of [x, y]
-        Outer ring of the polygon. The polygon should be closed or open.
-
-    Returns
-    -------
-    bool
-        True if point is inside the polygon, False otherwise.
+    Ray casting point-in-polygon test for a flat ring.
     """
+    if not polygon or len(polygon) < 3:
+        return False
+
     inside = False
-    n = len(polygon)
+    ring = polygon[:]
+    if ring[0] != ring[-1]:
+        ring = ring + [ring[0]]
 
-    if polygon[0] != polygon[-1]:
-        polygon = polygon + [polygon[0]]
+    for i in range(len(ring) - 1):
+        x0, y0 = ring[i]
+        x1, y1 = ring[i + 1]
 
-    for i in range(n):
-        x0, y0 = polygon[i]
-        x1, y1 = polygon[i + 1]
-
-        intersects = ((y0 > y) != (y1 > y)) and (
-            x < (x1 - x0) * (y - y0) / (y1 - y0 + 1e-15) + x0
-        )
-        if intersects:
-            inside = not inside
+        if (y0 > y) != (y1 > y):
+            xinters = (x1 - x0) * (y - y0) / (y1 - y0 + 1e-15) + x0
+            if x < xinters:
+                inside = not inside
 
     return inside
 
 
-def find_offset_point(
-    centroid, polygon, used_points=None, step=0.0005, max_radius=0.01, num_angles=16
+def point_in_multipolygon(x, y, multipolygon_coords):
+    """
+    True if the point is inside any polygon part.
+    """
+    for ring in get_outer_rings_from_multipolygon(multipolygon_coords):
+        if point_in_polygon(x, y, ring):
+            return True
+    return False
+
+
+def multipolygon_bounds(multipolygon_coords):
+    """
+    Bounds of all outer rings in a MultiPolygon.
+    """
+    xs = []
+    ys = []
+
+    for ring in get_outer_rings_from_multipolygon(multipolygon_coords):
+        for x, y in ring:
+            xs.append(x)
+            ys.append(y)
+
+    if not xs or not ys:
+        raise ValueError("Empty multipolygon coordinates")
+
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def find_interior_point_near_centroid(
+    centroid, multipolygon_coords, step=None, max_radius=None
 ):
     """
-    Find a point near centroid that lies inside polygon and is not already used.
-
-    Parameters
-    ----------
-    centroid : tuple
-        (x, y)
-    polygon : list
-        Outer ring of polygon coordinates.
-    used_points : set or list
-        Previously used points, rounded tuples like (x, y).
-    step : float
-        Radial step size.
-    max_radius : float
-        Maximum search radius.
-    num_angles : int
-        Number of angles to test at each radius.
-
-    Returns
-    -------
-    tuple
-        (x, y) point inside polygon, or None if not found.
+    Find one point inside the multipolygon near centroid.
     """
-    if used_points is None:
-        used_points = set()
+    pts = generate_points_around_centroid(
+        centroid, multipolygon_coords, 1, step=step, max_radius=max_radius
+    )
+    return pts[0] if pts else centroid
 
+
+def multipolygon_part_centroids(multipolygon_coords):
+    centroids = []
+    for polygon in multipolygon_coords:
+        if not polygon or not polygon[0]:
+            continue
+        cx, cy, _ = polygon_centroid(polygon[0])
+        centroids.append((cx, cy))
+    return centroids
+
+
+def point_distance(p1, p2):
+    return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+
+
+def is_far_enough(candidate, points, min_sep):
+    """
+    Check if candidate is at least min_sep away from all existing points.
+    """
+    for pt in points:
+        if point_distance(candidate, pt) < min_sep:
+            return False
+    return True
+
+
+def generate_points_around_centroid(
+    centroid, multipolygon_coords, num_points, step=None, max_radius=None, min_sep=None
+):
+    """
+    Generate exactly num_points points associated with a multipolygon,
+    while keeping a minimum separation between points.
+    """
+    if num_points <= 0:
+        return []
+
+    minx, miny, maxx, maxy = multipolygon_bounds(multipolygon_coords)
     cx, cy = centroid
 
-    # First try the centroid itself
-    candidate = (cx, cy)
-    if point_in_polygon(cx, cy, polygon) and candidate not in used_points:
-        return candidate
+    width = maxx - minx
+    height = maxy - miny
 
+    # Minimum spacing between points
+    if min_sep is None:
+        min_sep = max(min(width, height) / max(4 * num_points, 1), 1e-9)
+
+    # Search step
+    if step is None:
+        step = max(min(width, height) / 20.0, min_sep)
+
+    if max_radius is None:
+        max_radius = max(width, height)
+
+    points = []
+    used = set()
+
+    def add_point(x, y):
+        pt = normalize_pt((x, y))
+        if pt in used:
+            return False
+
+        if not point_in_multipolygon(x, y, multipolygon_coords):
+            return False
+
+        if not is_far_enough(pt, points, min_sep):
+            return False
+
+        points.append(pt)
+        used.add(pt)
+        return True
+
+    # 1) centroid first
+    add_point(cx, cy)
+
+    # 2) expanding ring search
     radius = step
-    while radius <= max_radius:
+    while len(points) < num_points and radius <= max_radius:
+        # More angles = more options around the ring
+        num_angles = max(24, 12 * len(points) + 24)
+
         for i in range(num_angles):
+            if len(points) >= num_points:
+                break
+
             angle = 2 * math.pi * i / num_angles
             x = cx + radius * math.cos(angle)
             y = cy + radius * math.sin(angle)
-            candidate = (round(x, 8), round(y, 8))
+            add_point(x, y)
 
-            if candidate in used_points:
-                continue
-
-            if point_in_polygon(x, y, polygon):
-                return candidate
         radius += step
 
-    return None
+    # 3) fallback: polygon-part centroids + jitter with spacing
+    if len(points) < num_points:
+        for px, py in multipolygon_part_centroids(multipolygon_coords):
+            if len(points) >= num_points:
+                break
+
+            add_point(px, py)
+
+            # Try around this part centroid
+            jitter_scale = max(min_sep / 2.0, 1e-9)
+            for x, y in jitter_pattern((px, py), 16, jitter_scale):
+                if len(points) >= num_points:
+                    break
+                add_point(x, y)
+
+    # 4) final fallback: wider jitter around centroid
+    if len(points) < num_points:
+        jitter_scale = max(min_sep / 2.0, 1e-9)
+        for x, y in jitter_pattern((cx, cy), max(48, num_points * 8), jitter_scale):
+            if len(points) >= num_points:
+                break
+            add_point(x, y)
+
+    # 5) absolute fallback
+    if not points:
+        points = [normalize_pt((cx, cy))]
+
+    while len(points) < num_points:
+        # If geometry is too tight, repeat the last point
+        points.append(points[-1])
+
+    return points
 
 
 def assign_distinct_colors(items, seed=42):
@@ -271,18 +394,26 @@ def assign_distinct_colors(items, seed=42):
 def assign_centroid_to_bus(bus_data, zone_data):
     bus_by_centroid = {}
     no_loc_data = []
-    zone_used = []
-    for bus_name, bus_dict in bus_data.items():
-        if bus_dict["zone"] in zone_data.keys():
-            if bus_dict["zone"] not in zone_used:
-                bus_by_centroid[bus_name] = zone_data[bus_dict["zone"]]["centroid"]
-                zone_used.append(bus_dict["zone"])
-            else:
-                og_centroid = zone_data[bus_dict["zone"]]["centroid"]
-                new_centroid = (og_centroid[0] + 1.0, og_centroid[1] + 1.0)
-                bus_by_centroid[bus_name] = new_centroid
-        else:
-            no_loc_data.append(bus_dict["zone"])
+
+    for zone, bus_list in bus_data.items():
+        if zone not in zone_data:
+            no_loc_data.append(zone)
+            continue
+
+        num_buses = len(bus_list)
+        zone_centroid = zone_data[zone]["centroid"]
+        zone_coords = zone_data[zone]["coordinates"]
+
+        points = generate_points_around_centroid(
+            centroid=zone_centroid,
+            multipolygon_coords=zone_coords,
+            num_points=num_buses,
+            min_sep=0.5,
+        )
+
+        # points is guaranteed to match num_buses
+        for bus, pt in zip(bus_list, points):
+            bus_by_centroid[bus] = pt
 
     return bus_by_centroid
 
@@ -342,10 +473,17 @@ def plot_grid(zone_data, bus_data=None, branch_data=None):
         ax.add_collection(collection)
 
     if bus_data:
-        lats = [pt[0] for pt in bus_data.values()]
-        lons = [pt[1] for pt in bus_data.values()]
         for bus, loc in bus_data.items():
-            ax.scatter(loc[0], loc[1], color="black", s=30, zorder=4, label=bus)
+            ax.scatter(
+                loc[0],
+                loc[1],
+                color="black",
+                edgecolors="black",
+                s=15,
+                zorder=4,
+                alpha=0.4,
+                label=bus,
+            )
 
     if branch_data:
         for branch, loc in branch_data.items():
@@ -419,7 +557,7 @@ if __name__ == "__main__":
     for ix, val in color_map.items():
         filt_zone[ix]["color"] = val
 
-    bus_by_centroid = assign_centroid_to_bus(bus_data, filt_zone)
+    bus_by_centroid = assign_centroid_to_bus(bus_zones, filt_zone)
 
     branch_by_centroid = assign_loc_to_branches(branch_data, bus_by_centroid)
 
