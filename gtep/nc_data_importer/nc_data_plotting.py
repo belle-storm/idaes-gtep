@@ -43,12 +43,14 @@ def make_zone_dict(geojson_data, centroids):
     zone_data = {}
     for ix in geojson_data:
         name = ix["properties"]["countryKey"]
+        countryName = ix["properties"]["countryName"]
         centroid = None
         if name in centroids.keys():
             centroid = centroids[name]
         zone_data[name] = {
             "coordinates": ix["geometry"]["coordinates"],
             "centroid": centroid,
+            "countryName": countryName,
         }
     return zone_data
 
@@ -511,7 +513,13 @@ def plot_grid(zone_data, bus_data=None, branch_data=None):
     plt.close()
 
 
-def plot_zones_and_buses_mapbox(zone_data, bus_positions, zone_colors=None, map_style="open-street-map"):
+def plot_zones_and_buses_mapbox(
+    zone_data,
+    bus_positions,
+    branch_data=None,
+    zone_colors=None,
+    map_style="open-street-map",
+):
     """
     Plot MultiPolygon zones and bus points on a Mapbox/Plotly map.
 
@@ -544,9 +552,12 @@ def plot_zones_and_buses_mapbox(zone_data, bus_positions, zone_colors=None, map_
     # Add zones as filled polygon traces
     for i, (zone_name, zone_info) in enumerate(zone_data.items()):
         coords = zone_info["coordinates"]
+        country = zone_info["countryName"]
         color = zone_colors.get(zone_name, None) if zone_colors else None
         if color is None:
-            color = f"rgba({50 + (i*40)%200}, {100 + (i*70)%155}, {180 + (i*30)%75}, 0.35)"
+            color = (
+                f"rgba({50 + (i*40)%200}, {100 + (i*70)%155}, {180 + (i*30)%75}, 0.35)"
+            )
 
         # MultiPolygon -> multiple polygon parts
         for poly in coords:
@@ -562,18 +573,20 @@ def plot_zones_and_buses_mapbox(zone_data, bus_positions, zone_colors=None, map_
                 lons.append(lons[0])
                 lats.append(lats[0])
 
-            fig.add_trace(go.Scattermapbox(
-                lon=lons,
-                lat=lats,
-                mode="lines",
-                fill="toself",
-                fillcolor=color,
-                line=dict(color="black", width=1),
-                name=zone_name,
-                hoverinfo="text",
-                text=zone_name,
-                showlegend=True
-            ))
+            fig.add_trace(
+                go.Scattermapbox(
+                    lon=lons,
+                    lat=lats,
+                    mode="lines",
+                    fill="toself",
+                    fillcolor=color,
+                    line=dict(color="black", width=1),
+                    name=country,
+                    hoverinfo="text",
+                    text=zone_name,
+                    showlegend=True,
+                )
+            )
 
     # Add bus points
     bus_lons = []
@@ -585,15 +598,28 @@ def plot_zones_and_buses_mapbox(zone_data, bus_positions, zone_colors=None, map_
         bus_lats.append(lat)
         bus_text.append(bus_name)
 
-    fig.add_trace(go.Scattermapbox(
-        lon=bus_lons,
-        lat=bus_lats,
-        mode="markers+text",
-        marker=dict(size=10, color="red"),
-        text=bus_text,
-        textposition="top center",
-        name="Buses"
-    ))
+    fig.add_trace(
+        go.Scattermapbox(
+            lon=bus_lons,
+            lat=bus_lats,
+            mode="markers+text",
+            marker=dict(size=10, color="rgba(255, 0, 0, 0.5)"),
+            # text=bus_text,
+            # textposition="top center",
+            name="Buses",
+        )
+    )
+    if branch_data:
+        for branch, loc in branch_data.items():
+            fig.add_trace(
+                go.Scattermapbox(
+                    lon=loc[0],
+                    lat=loc[1],
+                    mode="lines",
+                    line=dict(color="rgba(0, 0, 0, 0.5)", width=1),
+                    name="Branches",
+                )
+            )
 
     # Center map on data
     all_lons = []
@@ -618,16 +644,13 @@ def plot_zones_and_buses_mapbox(zone_data, bus_positions, zone_colors=None, map_
 
     fig.update_layout(
         mapbox=dict(
-            style=map_style,
-            center=dict(lon=center_lon, lat=center_lat),
-            zoom=8
+            style=map_style, center=dict(lon=center_lon, lat=center_lat), zoom=8
         ),
         margin=dict(l=0, r=0, t=30, b=0),
-        title="Zones and Buses on Mapbox"
+        title="Zones and Buses on Mapbox",
     )
 
     fig.show()
-
 
 
 if __name__ == "__main__":
@@ -654,7 +677,7 @@ if __name__ == "__main__":
 
     # grab grid data elements
     grid_data = data_object.md.data
-    bus_data = grid_data['elements']["bus"]
+    bus_data = grid_data["elements"]["bus"]
     branch_data = grid_data["elements"]["branch"]
 
     # grab list of zones we need with a list of buses associated
@@ -681,5 +704,5 @@ if __name__ == "__main__":
 
     branch_by_centroid = assign_loc_to_branches(branch_data, bus_by_centroid)
 
-    plot_zones_and_buses_mapbox(filt_zone, bus_by_centroid)
+    plot_zones_and_buses_mapbox(filt_zone, bus_by_centroid, branch_by_centroid)
     pass
