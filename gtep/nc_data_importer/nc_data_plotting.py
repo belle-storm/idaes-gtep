@@ -142,6 +142,97 @@ def gather_gen_details(gen_data):
     return gen_details
 
 
+def gather_details_by_zone(grid_data, excel_name=None):
+    # for easier calling
+    bus_data = grid_data["elements"]["bus"]
+    branch_data = grid_data["elements"]["branch"]
+    dc_branch_data = grid_data["elements"]["dc_branch"]
+    gen_data = grid_data["elements"]["generator"]
+    stor_data = grid_data["elements"]["storage"]
+    # grab list of zones being used
+    zones = {}
+    for bus_info in bus_data.values():
+        if bus_info["zone"] not in zones.keys():
+            zones[bus_info["zone"]] = {"num_bus": 0}
+        zones[bus_info["zone"]]["num_bus"] += 1
+    # grab branch info
+    for br in [branch_data, dc_branch_data]:
+        for branch in br.values():
+            in_zone = bus_data[branch["from_bus"]]["zone"]
+            out_zone = bus_data[branch["to_bus"]]["zone"]
+            for name, target in {"incoming": in_zone, "outgoing": out_zone}.items():
+                if target in zones.keys():
+                    for item in ["capital_cost", "distance"]:
+                        if f"{name}_branch_{item}" not in zones[in_zone].keys():
+                            zones[in_zone][f"{name}_branch_{item}"] = []
+                        zones[in_zone][f"{name}_branch_{item}"].append(
+                            float(branch[item])
+                        )
+    # grab gen info
+    for gen in gen_data.values():
+        zone = gen["zone"]
+        if zone in zones.keys():
+            if "gen_count" not in zones[zone].keys():
+                zones[zone]["gen_count"] = 0
+            if "gen_renewable_count" not in zones[zone].keys():
+                zones[zone]["gen_renewable_count"] = 0
+            if "gen_capital_cost" not in zones[zone].keys():
+                zones[zone]["gen_capital_cost"] = []
+            if "gen_emissions_factor" not in zones[zone].keys():
+                zones[zone]["gen_emissions_factor"] = []
+            if "gen_lifetime" not in zones[zone].keys():
+                zones[zone]["gen_lifetime"] = []
+            zones[zone]["gen_count"] += 1
+            zones[zone]["gen_renewable_count"] += 1
+            zones[zone]["gen_capital_cost"].append(float(gen["investment_cost"]))
+            zones[zone]["gen_emissions_factor"].append(float(gen["emissions_factor"]))
+            zones[zone]["gen_lifetime"].append(float(gen["lifetime"]))
+
+    # grab storage data
+    for stor in stor_data.values():
+        stor_zone = bus_data[stor["bus"]]["zone"]
+        if stor_zone in zones.keys():
+            for item in ["investment_cost", "energy_capacity"]:
+                if f"storage_{item}" not in zones[stor_zone].keys():
+                    zones[stor_zone][f"storage_{item}"] = []
+                zones[stor_zone][f"storage_{item}"].append(stor[item])
+
+    # grab averages
+    for details in zones.values():
+        for name, info in details.items():
+            if isinstance(info, list):
+                details[name] = np.mean(info)
+
+    if excel_name is not None:
+        zone_df = None
+        for zone_name, zone_dict in zones.items():
+            zdf = pd.DataFrame(zone_dict, index=[zone_name])
+            if zone_df is None:
+                zone_df = zdf
+            else:
+                zone_df = pd.concat([zone_df, zdf])
+        with pd.ExcelWriter(excel_name, engine="openpyxl", mode="a") as writer:
+            zone_df.to_excel(writer, sheet_name="Zone Details", index=True)
+
+    return zones
+
+
+def grab_zone_costs(zone_data):
+    cost_data = {}
+    for zone, details in zone_data.items():
+        storage = 0.0
+        if "storage_investment_cost" in details.keys():
+            storage = details["storage_investment_cost"]
+
+        cost_data[zone] = {
+            "Incoming Branch": details["incoming_branch_capital_cost"],
+            "Outgoing Branch": details["outgoing_branch_capital_cost"],
+            "Generator": details["gen_capital_cost"],
+            "Storage Unit": storage,
+        }
+    return cost_data
+
+
 def read_geojson(filepath):
     """
     Read a GeoJSON file and return its contents as a Python dict.
@@ -1060,6 +1151,38 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map"):
     fig.show()
 
 
+def plot_stacked_costs(cost_data):
+    zones = list(cost_data.keys())
+
+    # Collect all cost labels
+    cost_labels = sorted(
+        {label for zone_vals in cost_data.values() for label in zone_vals.keys()}
+    )
+
+    fig = go.Figure()
+
+    for label in cost_labels:
+        values = [cost_data[zone].get(label, 0) for zone in zones]
+
+        fig.add_trace(
+            go.Bar(
+                x=zones,
+                y=values,
+                name=label,
+            )
+        )
+
+    fig.update_layout(
+        barmode="stack",
+        title="Average Capital Costs by Zone and Element",
+        xaxis_title="Zone",
+        yaxis_title="Average Capital Cost",
+        legend_title="Cost Category",
+    )
+
+    fig.show()
+
+
 def run_grid_location_workflow(bus_data, branch_data, geojson_path=None):
     if geojson_path is None:
         geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
@@ -1219,8 +1342,14 @@ def run_gather_baseline_details_workflow(grid_data, excel_name=None):
     # save to excel sheet
     if excel_name is None:
         excel_name = "baseline_details.xlsx"
-    with pd.ExcelWriter(excel_name, engine="openpyxl") as writer:
+    with pd.ExcelWriter(excel_name, engine="openpyxl", mode="a") as writer:
         flipped_df.to_excel(writer, sheet_name="Whole Grid", index=True)
+
+
+def run_cost_plotting_workflow(grid_data):
+    zone_data = gather_details_by_zone(grid_data)
+    costs_by_zone = grab_zone_costs(zone_data)
+    plot_stacked_costs(costs_by_zone)
 
 
 if __name__ == "__main__":
@@ -1248,7 +1377,13 @@ if __name__ == "__main__":
     # plot units
     # run_unit_type_plotting_workflow(grid_data['elements']['generator'], plot_type='bar')
 
-    run_gather_baseline_details_workflow(
+    # get baseline info
+    # run_gather_baseline_details_workflow(
+    #     grid_data, "/Users/bstorm/Desktop/baseline_details.xlsx"
+    # )
+
+    zone_data = gather_details_by_zone(
         grid_data, "/Users/bstorm/Desktop/baseline_details.xlsx"
     )
+
     pass
