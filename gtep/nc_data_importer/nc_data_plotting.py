@@ -1382,8 +1382,8 @@ if __name__ == "__main__":
     #     grid_data, "/Users/bstorm/Desktop/baseline_details.xlsx"
     # )
 
-    zone_data = gather_details_by_zone(
-        grid_data, "/Users/bstorm/Desktop/baseline_details.xlsx"
-    )
+    # zone_data = gather_details_by_zone(
+    #     grid_data, "/Users/bstorm/Desktop/baseline_details.xlsx"
+    # )
 
     pass
