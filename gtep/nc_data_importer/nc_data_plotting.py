@@ -761,6 +761,23 @@ def run_grid_location_workflow(bus_data, branch_data, geojson_path=None):
     plot_zones_and_buses_mapbox(filt_zone, bus_by_centroid, branch_by_centroid)
 
 
+def run_unit_type_plotting_workflow(gen_data, plot_type="pie"):
+    VALID_PLOT_TYPE = ["pie", "bar"]
+    if plot_type.lower() not in VALID_PLOT_TYPE:
+        raise KeyError(
+            f"invalid plot type input: {plot_type}. Please select one of the following: {VALID_PLOT_TYPE}"
+        )
+
+    if plot_type == "pie":
+        # plot total unit type distribution
+        unit_types = collect_unit_types_total(grid_data["elements"]["generator"])
+        plot_fuel_pie(unit_types)
+    elif plot_type == "bar":
+        # plot unit types by zone
+        zone_units = collect_unit_by_zone(grid_data["elements"]["generator"])
+        plot_fuel_by_zone(zone_units)
+
+
 if __name__ == "__main__":
 
     # Open grid data
@@ -781,11 +798,7 @@ if __name__ == "__main__":
     # plot grid by location
     # run_grid_location_workflow(grid_data["elements"]["bus"], grid_data["elements"]["branch"])
 
-    # plot total unit type distribution
-    # unit_types = collect_unit_types_total(grid_data["elements"]["generator"])
-    # plot_fuel_pie(unit_types)
+    # plot units
+    # run_unit_type_plotting_workflow(grid_data['elements']['generator'], plot_type='bar')
 
-    # plot unit types by zone
-    # zone_units = collect_unit_by_zone(grid_data["elements"]["generator"])
-    # plot_fuel_by_zone(zone_units)
     pass
