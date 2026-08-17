@@ -11,6 +11,7 @@ from collections import Counter
 from plotly.subplots import make_subplots
 import numpy as np
 import plotly.colors as pc
+import pandas as pd
 
 
 def gather_bus_details(bus_data):
@@ -1100,7 +1101,7 @@ def run_grid_location_workflow(bus_data, branch_data, geojson_path=None):
 
     branch_by_centroid = assign_loc_to_branches(branch_data, bus_by_centroid)
 
-    # plot_zones_and_buses_mapbox(filt_zone, bus_by_centroid, branch_by_centroid)
+    plot_zones_and_buses_mapbox(filt_zone, bus_by_centroid, branch_by_centroid)
 
     plot_renewable_percentage_map(filt_zone)
 
@@ -1122,7 +1123,7 @@ def run_unit_type_plotting_workflow(gen_data, plot_type="pie"):
         plot_fuel_by_zone(zone_units)
 
 
-def run_gather_baseline_details_workflow(grid_data):
+def run_gather_baseline_details_workflow(grid_data, excel_name=None):
     # grab basic details
     zones, num_buses = gather_bus_details(grid_data["elements"]["bus"])
     branch_details = gather_branch_details(
@@ -1135,17 +1136,91 @@ def run_gather_baseline_details_workflow(grid_data):
 
     # save to dictionary
     baseline_deets = {
-        "num_zones": len(zones),
-        "num_areas": num_areas,
-        "num_buses": num_buses,
-        "num_ac_branches": branch_details["AC"]["num"],
-        "num_dc_branches": branch_details["DC"]["num"],
-        "num_total_branches": branch_details["Total"]["num"],
-        "num_generators": gen_details["num"],
-        "num_candidate_generators": gen_details["num_candidates"],
-        "num_storage_units": stor_details["num"],
+        # totals
+        "num_zones": [len(zones)],
+        "num_areas": [num_areas],
+        "num_buses": [num_buses],
+        "num_ac_branches": [branch_details["AC"]["num"]],
+        "num_dc_branches": [branch_details["DC"]["num"]],
+        "num_total_branches": [branch_details["Total"]["num"]],
+        "num_generators": [gen_details["num"]],
+        "num_candidate_generators": [gen_details["num_candidates"]],
+        "num_storage_units": [stor_details["num"]],
+        # gen stats
+        "percent_gen_renewable": [
+            100.0 * gen_details["gen_type"]["renewable"] / gen_details["num"]
+        ],
+        "percent_gen_thermal": [
+            100.0 * gen_details["gen_type"]["thermal"] / gen_details["num"]
+        ],
+        "avg_gen_p_max": [np.mean(gen_details["p_max"])],
+        "avg_gen_lifetime": [np.mean(gen_details["lifetime"])],
+        "avg_gen_emission": [np.mean(gen_details["emission_factor"])],
+        "avg_gen_capital_cost": [np.mean(gen_details["capital_costs"])],
+        "min_gen_p_max": [min(gen_details["p_max"])],
+        "min_gen_lifetime": [min(gen_details["lifetime"])],
+        "min_gen_emission": [min(gen_details["emission_factor"])],
+        "min_gen_capital_cost": [min(gen_details["capital_costs"])],
+        "max_gen_p_max": [max(gen_details["p_max"])],
+        "max_gen_lifetime": [max(gen_details["lifetime"])],
+        "max_gen_emission": [max(gen_details["emission_factor"])],
+        "max_gen_capital_cost": [max(gen_details["capital_costs"])],
+        # branch stats
+        "avg_ac_branch_distance": [np.mean(branch_details["AC"]["distance"])],
+        "min_ac_branch_distance": [min(branch_details["AC"]["distance"])],
+        "max_ac_branch_distance": [max(branch_details["AC"]["distance"])],
+        "avg_ac_branch_long_term_rating": [np.mean(branch_details["AC"]["rating"])],
+        "min_ac_branch_long_term_rating": [min(branch_details["AC"]["rating"])],
+        "max_ac_branch_long_term_rating": [max(branch_details["AC"]["rating"])],
+        "avg_ac_branch_capital_cost": [np.mean(branch_details["AC"]["capital_cost"])],
+        "min_ac_branch_capital_cost": [min(branch_details["AC"]["capital_cost"])],
+        "max_ac_branch_capital_cost": [max(branch_details["AC"]["capital_cost"])],
+        "avg_dc_branch_distance": [np.mean(branch_details["DC"]["distance"])],
+        "min_dc_branch_distance": [min(branch_details["DC"]["distance"])],
+        "max_dc_branch_distance": [max(branch_details["DC"]["distance"])],
+        "avg_dc_branch_long_term_rating": [np.mean(branch_details["DC"]["rating"])],
+        "min_dc_branch_long_term_rating": [min(branch_details["DC"]["rating"])],
+        "max_dc_branch_long_term_rating": [max(branch_details["DC"]["rating"])],
+        "avg_dc_branch_capital_cost": [np.mean(branch_details["DC"]["capital_cost"])],
+        "min_dc_branch_capital_cost": [min(branch_details["DC"]["capital_cost"])],
+        "max_dc_branch_capital_cost": [max(branch_details["DC"]["capital_cost"])],
+        "avg_total_branch_distance": [np.mean(branch_details["Total"]["distance"])],
+        "min_total_branch_distance": [min(branch_details["Total"]["distance"])],
+        "max_total_branch_distance": [max(branch_details["Total"]["distance"])],
+        "avg_total_branch_long_term_rating": [
+            np.mean(branch_details["Total"]["rating"])
+        ],
+        "min_total_branch_long_term_rating": [min(branch_details["Total"]["rating"])],
+        "max_total_branch_long_term_rating": [max(branch_details["Total"]["rating"])],
+        "avg_total_branch_capital_cost": [
+            np.mean(branch_details["Total"]["capital_cost"])
+        ],
+        "min_total_branch_capital_cost": [min(branch_details["Total"]["capital_cost"])],
+        "max_total_branch_capital_cost": [max(branch_details["Total"]["capital_cost"])],
+        # storage stats
+        "avg_storage_capacity": [np.mean(stor_details["capacity"])],
+        "min_storage_capacity": [min(stor_details["capacity"])],
+        "max_storage_capacity": [max(stor_details["capacity"])],
+        "avg_storage_charge_efficiency": [np.mean(stor_details["charge_efficiency"])],
+        "min_storage_charge_efficiency": [min(stor_details["charge_efficiency"])],
+        "max_storage_charge_efficiency": [max(stor_details["charge_efficiency"])],
+        "avg_storage_discharge_efficiency": [
+            np.mean(stor_details["discharge_efficiency"])
+        ],
+        "min_storage_discharge_efficiency": [min(stor_details["discharge_efficiency"])],
+        "max_storage_discharge_efficiency": [max(stor_details["discharge_efficiency"])],
+        "avg_storage_capital_costs": [np.mean(stor_details["capital_costs"])],
+        "min_storage_capital_costs": [min(stor_details["capital_costs"])],
+        "max_storage_capital_costs": [max(stor_details["capital_costs"])],
     }
-    # turn into
+    # turn into dataframe
+    stats_df = pd.DataFrame(baseline_deets, index=["value"])
+    flipped_df = stats_df.T
+    # save to excel sheet
+    if excel_name is None:
+        excel_name = "baseline_details.xlsx"
+    with pd.ExcelWriter(excel_name, engine="openpyxl") as writer:
+        flipped_df.to_excel(writer, sheet_name="Whole Grid", index=True)
 
 
 if __name__ == "__main__":
@@ -1166,12 +1241,14 @@ if __name__ == "__main__":
     grid_data = data_object.md.data
 
     # plot grid by location
-    run_grid_location_workflow(
-        grid_data["elements"]["bus"], grid_data["elements"]["branch"]
-    )
+    # run_grid_location_workflow(
+    #     grid_data["elements"]["bus"], grid_data["elements"]["branch"]
+    # )
 
     # plot units
     # run_unit_type_plotting_workflow(grid_data['elements']['generator'], plot_type='bar')
 
-    # run_gather_baseline_details_workflow(grid_data)
+    run_gather_baseline_details_workflow(
+        grid_data, "/Users/bstorm/Desktop/baseline_details.xlsx"
+    )
     pass
