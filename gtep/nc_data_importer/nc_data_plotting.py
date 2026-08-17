@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from collections import Counter
 from plotly.subplots import make_subplots
 import numpy as np
+import plotly.colors as pc
 
 
 def gather_bus_details(bus_data):
@@ -94,6 +95,18 @@ def gather_storage_details(storage_data):
         "capital_costs": capital_costs,
     }
     return stor_details
+
+
+def gen_counts_by_zone(gen_data):
+    zone_count = {}
+    for gen, gen_info in gen_data.items():
+        if "c" in gen:
+            continue
+        if gen_info["zone"] not in zone_count.keys():
+            zone_count[gen_info["zone"]] = {"renewable": 0, "thermal": 0, "total": 0}
+        zone_count[gen_info["zone"]][gen_info["generator_type"]] += 1
+        zone_count[gen_info["zone"]]["total"] += 1
+    return zone_count
 
 
 def gather_gen_details(gen_data):
@@ -927,6 +940,125 @@ def plot_branch_comparison(ac_branch, dc_branch, total):
     fig.show()
 
 
+def plot_renewable_percentage_map(zone_data, map_style="open-street-map"):
+    """
+    Plot MultiPolygon zones on a Mapbox/Plotly map, coloring each zone by
+    renewable generator percentage.
+    """
+    fig = go.Figure()
+
+    # Gather renewable percentages
+    zone_percentages = {}
+    for zone_name, zone_info in zone_data.items():
+        renewable_count = zone_info.get("renewable", 0)
+        total_count = zone_info.get("total", 0)
+
+        if total_count and total_count > 0:
+            pct = 100.0 * renewable_count / total_count
+        else:
+            pct = 0.0
+
+        zone_percentages[zone_name] = pct
+
+    # Define colorscale and normalization range
+    colorscale = "Viridis"
+    cmin = min(zone_percentages.values()) if zone_percentages else 0
+    cmax = max(zone_percentages.values()) if zone_percentages else 100
+
+    def pct_to_color(pct):
+        if cmax == cmin:
+            normalized = 0.5  # or 0.0, depending on the color you want
+        else:
+            normalized = (pct - cmin) / (cmax - cmin)
+
+        normalized = max(0, min(1, normalized))
+        return pc.sample_colorscale(colorscale, [normalized])[0]
+
+    # Add zones as filled polygon traces
+    for zone_name, zone_info in zone_data.items():
+        coords = zone_info["coordinates"]
+        pct = zone_percentages[zone_name]
+        fill_color = pct_to_color(pct)
+
+        for poly in coords:
+            if not poly or not poly[0]:
+                continue
+
+            outer_ring = poly[0]
+            lons = [pt[0] for pt in outer_ring]
+            lats = [pt[1] for pt in outer_ring]
+
+            # Close ring if needed
+            if lons[0] != lons[-1] or lats[0] != lats[-1]:
+                lons.append(lons[0])
+                lats.append(lats[0])
+
+            fig.add_trace(
+                go.Scattermapbox(
+                    lon=lons,
+                    lat=lats,
+                    mode="lines",
+                    fill="toself",
+                    fillcolor=fill_color,
+                    line=dict(color="black", width=1),
+                    name=zone_name,
+                    hoverinfo="text",
+                    text=f"{zone_name}<br>Renewable: {pct:.1f}%",
+                    showlegend=False,
+                )
+            )
+
+    # Add a dummy trace only for the colorbar
+    fig.add_trace(
+        go.Scattermapbox(
+            lon=[None],
+            lat=[None],
+            mode="markers",
+            marker=dict(
+                size=10,
+                color=[0, 100],
+                cmin=cmin,
+                cmax=cmax,
+                colorscale=colorscale,
+                showscale=True,
+                colorbar=dict(title="Renewable %"),
+            ),
+            showlegend=False,
+            hoverinfo="none",
+        )
+    )
+
+    # Center map on data
+    all_lons = []
+    all_lats = []
+
+    for zone_info in zone_data.values():
+        for poly in zone_info["coordinates"]:
+            if not poly or not poly[0]:
+                continue
+            for pt in poly[0]:
+                all_lons.append(pt[0])
+                all_lats.append(pt[1])
+
+    if all_lons and all_lats:
+        center_lon = sum(all_lons) / len(all_lons)
+        center_lat = sum(all_lats) / len(all_lats)
+    else:
+        center_lon, center_lat = 0, 0
+
+    fig.update_layout(
+        mapbox=dict(
+            style=map_style,
+            center=dict(lon=center_lon, lat=center_lat),
+            zoom=8,
+        ),
+        margin=dict(l=0, r=0, t=30, b=0),
+        title="Percentage of Renewable Generators by Zone",
+    )
+
+    fig.show()
+
+
 def run_grid_location_workflow(bus_data, branch_data, geojson_path=None):
     if geojson_path is None:
         geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
@@ -957,11 +1089,20 @@ def run_grid_location_workflow(bus_data, branch_data, geojson_path=None):
     for ix, val in color_map.items():
         filt_zone[ix]["color"] = val
 
+    # find percentage renewable gen by zone
+    gen_details = gen_counts_by_zone(grid_data["elements"]["generator"])
+
+    for zone_name, renewable_vals in gen_details.items():
+        if zone_name in filt_zone:
+            filt_zone[zone_name].update(renewable_vals)
+
     bus_by_centroid = assign_centroid_to_bus(bus_zones, filt_zone)
 
     branch_by_centroid = assign_loc_to_branches(branch_data, bus_by_centroid)
 
-    plot_zones_and_buses_mapbox(filt_zone, bus_by_centroid, branch_by_centroid)
+    # plot_zones_and_buses_mapbox(filt_zone, bus_by_centroid, branch_by_centroid)
+
+    plot_renewable_percentage_map(filt_zone)
 
 
 def run_unit_type_plotting_workflow(gen_data, plot_type="pie"):
@@ -982,16 +1123,29 @@ def run_unit_type_plotting_workflow(gen_data, plot_type="pie"):
 
 
 def run_gather_baseline_details_workflow(grid_data):
-    zones, num = gather_bus_details(grid_data["elements"]["bus"])
+    # grab basic details
+    zones, num_buses = gather_bus_details(grid_data["elements"]["bus"])
     branch_details = gather_branch_details(
         grid_data["elements"]["branch"], grid_data["elements"]["dc_branch"]
     )
     gen_details = gather_gen_details(grid_data["elements"]["generator"])
     stor_details = gather_storage_details(grid_data["elements"]["storage"])
+    num_areas = len(grid_data["elements"]["area"])
+    # get stats
 
-    plot_branch_comparison(
-        branch_details["AC"], branch_details["DC"], branch_details["Total"]
-    )
+    # save to dictionary
+    baseline_deets = {
+        "num_zones": len(zones),
+        "num_areas": num_areas,
+        "num_buses": num_buses,
+        "num_ac_branches": branch_details["AC"]["num"],
+        "num_dc_branches": branch_details["DC"]["num"],
+        "num_total_branches": branch_details["Total"]["num"],
+        "num_generators": gen_details["num"],
+        "num_candidate_generators": gen_details["num_candidates"],
+        "num_storage_units": stor_details["num"],
+    }
+    # turn into
 
 
 if __name__ == "__main__":
@@ -1012,10 +1166,12 @@ if __name__ == "__main__":
     grid_data = data_object.md.data
 
     # plot grid by location
-    # run_grid_location_workflow(grid_data["elements"]["bus"], grid_data["elements"]["branch"])
+    run_grid_location_workflow(
+        grid_data["elements"]["bus"], grid_data["elements"]["branch"]
+    )
 
     # plot units
     # run_unit_type_plotting_workflow(grid_data['elements']['generator'], plot_type='bar')
 
-    run_gather_baseline_details_workflow(grid_data)
+    # run_gather_baseline_details_workflow(grid_data)
     pass
