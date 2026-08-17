@@ -8,7 +8,124 @@ import random
 import math
 import plotly.graph_objects as go
 from collections import Counter
-from collections import defaultdict
+from plotly.subplots import make_subplots
+import numpy as np
+
+
+def gather_bus_details(bus_data):
+    zones = []
+    num_buses = 0
+    for bus_info in bus_data.values():
+        zones.append(bus_info["zone"])
+        num_buses += 1
+    return zones, num_buses
+
+
+def gather_branch_details(branch_data, dc_branch_data):
+    num_branches = 0
+    ratings_long_term = []
+    capital_costs = []
+    distances = []
+    for branch_info in branch_data.values():
+        ratings_long_term.append(float(branch_info["rating_long_term"]))
+        capital_costs.append(float(branch_info["capital_cost"]))
+        distances.append(float(branch_info["distance"]))
+        num_branches += 1
+
+    # dc branches
+    num_dc_branches = 0
+    dc_ratings_long_term = []
+    dc_capital_costs = []
+    dc_distances = []
+    for branch_info in dc_branch_data.values():
+        dc_ratings_long_term.append(float(branch_info["rating_long_term"]))
+        dc_capital_costs.append(float(branch_info["capital_cost"]))
+        dc_distances.append(float(branch_info["distance"]))
+        num_dc_branches += 1
+
+    # totals
+    total_branches = num_branches + num_dc_branches
+    total_ratings = ratings_long_term + dc_ratings_long_term
+    total_capital_costs = capital_costs + dc_capital_costs
+    total_distances = distances + dc_distances
+
+    # collect into dict
+    branch_details = {
+        "AC": {
+            "num": num_branches,
+            "rating": ratings_long_term,
+            "capital_cost": capital_costs,
+            "distance": distances,
+        },
+        "DC": {
+            "num": num_dc_branches,
+            "rating": dc_ratings_long_term,
+            "capital_cost": dc_capital_costs,
+            "distance": dc_distances,
+        },
+        "Total": {
+            "num": total_branches,
+            "rating": total_ratings,
+            "capital_cost": total_capital_costs,
+            "distance": total_distances,
+        },
+    }
+
+    return branch_details
+
+
+def gather_storage_details(storage_data):
+    num_storage = 0
+    capacity = []
+    charge_efficiency = []
+    discharge_efficiency = []
+    capital_costs = []
+    for stor in storage_data.values():
+        num_storage += 1
+        capacity.append(stor["energy_capacity"])
+        charge_efficiency.append(stor["charge_efficiency"])
+        discharge_efficiency.append(stor["discharge_efficiency"])
+        capital_costs.append(stor["investment_cost"])
+    stor_details = {
+        "num": num_storage,
+        "capacity": capacity,
+        "charge_efficiency": charge_efficiency,
+        "discharge_efficiency": discharge_efficiency,
+        "capital_costs": capital_costs,
+    }
+    return stor_details
+
+
+def gather_gen_details(gen_data):
+    num_gens = 0
+    num_candidates = 0
+    p_max = []
+    gen_type = {"renewable": 0, "thermal": 0}
+    lifetime = []
+    emission_factor = []
+    capital_costs = []
+    for gen, gen_info in gen_data.items():
+        if "c" in gen:
+            num_candidates += 1
+            continue
+        num_gens += 1
+        p_max.append(gen_info["p_max"])
+        gen_type[gen_info["generator_type"]] += 1
+        lifetime.append(gen_info["lifetime"])
+        emission_factor.append(gen_info["emissions_factor"])
+        capital_costs.append(gen_info["investment_cost"])
+
+    # collect into dict
+    gen_details = {
+        "num": num_gens,
+        "num_candidates": num_candidates,
+        "p_max": p_max,
+        "gen_type": gen_type,
+        "lifetime": lifetime,
+        "emission_factor": emission_factor,
+        "capital_costs": capital_costs,
+    }
+    return gen_details
 
 
 def read_geojson(filepath):
@@ -724,6 +841,92 @@ def plot_fuel_by_zone(zone_units):
     fig.show()
 
 
+def plot_branch_comparison(ac_branch, dc_branch, total):
+    fig = make_subplots(
+        rows=3,
+        cols=3,
+        vertical_spacing=0.08,
+        horizontal_spacing=0.08,
+    )
+
+    data_groups = [
+        [ac_branch["rating"], ac_branch["distance"], ac_branch["capital_cost"]],
+        [dc_branch["rating"], dc_branch["distance"], dc_branch["capital_cost"]],
+        [total["rating"], total["distance"], total["capital_cost"]],
+    ]
+
+    row_labels = ["AC Branches", "DC Branches", "All Branches"]
+    col_labels = ["Long Term Rating", "Distance", "Capital Cost"]
+
+    colors = ["royalblue", "firebrick", "seagreen"]
+
+    for row_idx, group in enumerate(data_groups, start=1):
+        for col_idx, values in enumerate(group, start=1):
+            all_values = np.array(values, dtype=float)
+
+            bin_start = np.floor(all_values.min())
+            bin_end = np.ceil(all_values.max())
+            bin_size = (bin_end - bin_start) / 20
+
+            fig.add_trace(
+                go.Histogram(
+                    x=values,
+                    xbins=dict(
+                        start=bin_start,
+                        end=bin_end,
+                        size=bin_size,
+                    ),
+                    marker_color=colors[col_idx - 1],
+                    opacity=0.75,
+                    showlegend=False,
+                ),
+                row=row_idx,
+                col=col_idx,
+            )
+
+    # Add row labels on the left
+    row_centers = [0.83, 0.5, 0.17]
+    col_centers = [0.17, 0.5, 0.83]
+    # Row labels on left
+    for y, label in zip(row_centers, row_labels):
+        fig.add_annotation(
+            x=-0.05,
+            y=y,
+            xref="paper",
+            yref="paper",
+            text=label,
+            showarrow=False,
+            textangle=-90,
+            xanchor="center",
+            yanchor="middle",
+            font=dict(size=14),
+        )
+
+    # Column labels on top
+    for x, label in zip(col_centers, col_labels):
+        fig.add_annotation(
+            x=x,
+            y=1.03,
+            xref="paper",
+            yref="paper",
+            text=label,
+            showarrow=False,
+            xanchor="center",
+            yanchor="bottom",
+            font=dict(size=14),
+        )
+
+    fig.update_layout(
+        title="Baseline Branch Details",
+        bargap=0.1,
+        height=900,
+        width=1200,
+        showlegend=False,
+    )
+
+    fig.show()
+
+
 def run_grid_location_workflow(bus_data, branch_data, geojson_path=None):
     if geojson_path is None:
         geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
@@ -770,12 +973,25 @@ def run_unit_type_plotting_workflow(gen_data, plot_type="pie"):
 
     if plot_type == "pie":
         # plot total unit type distribution
-        unit_types = collect_unit_types_total(grid_data["elements"]["generator"])
+        unit_types = collect_unit_types_total(gen_data)
         plot_fuel_pie(unit_types)
     elif plot_type == "bar":
         # plot unit types by zone
-        zone_units = collect_unit_by_zone(grid_data["elements"]["generator"])
+        zone_units = collect_unit_by_zone(gen_data)
         plot_fuel_by_zone(zone_units)
+
+
+def run_gather_baseline_details_workflow(grid_data):
+    zones, num = gather_bus_details(grid_data["elements"]["bus"])
+    branch_details = gather_branch_details(
+        grid_data["elements"]["branch"], grid_data["elements"]["dc_branch"]
+    )
+    gen_details = gather_gen_details(grid_data["elements"]["generator"])
+    stor_details = gather_storage_details(grid_data["elements"]["storage"])
+
+    plot_branch_comparison(
+        branch_details["AC"], branch_details["DC"], branch_details["Total"]
+    )
 
 
 if __name__ == "__main__":
@@ -801,4 +1017,5 @@ if __name__ == "__main__":
     # plot units
     # run_unit_type_plotting_workflow(grid_data['elements']['generator'], plot_type='bar')
 
+    run_gather_baseline_details_workflow(grid_data)
     pass
