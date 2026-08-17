@@ -518,36 +518,18 @@ def plot_zones_and_buses_mapbox(
     bus_positions,
     branch_data=None,
     zone_colors=None,
+    zone_legend=True,
     map_style="open-street-map",
 ):
     """
     Plot MultiPolygon zones and bus points on a Mapbox/Plotly map.
-
-    Parameters
-    ----------
-    zone_data : dict
-        {
-            zone_name: {
-                "coordinates": multipolygon_coords,  # GeoJSON-style lon/lat
-                "centroid": (lon, lat)
-            }
-        }
-    bus_positions : dict
-        {
-            bus_name: (lon, lat)
-        }
-    zone_colors : dict, optional
-        {zone_name: "rgba(...)" or hex color}
-    map_style : str
-        Plotly map style, e.g.:
-        - "open-street-map"
-        - "carto-positron"
-        - "carto-darkmatter"
-        - "streets"
-        - "outdoors"
-        - "satellite"
     """
     fig = go.Figure()
+
+    # uncomment to switch to adding each country to the legend
+    # Track which zone legends have already been added
+    # seen_zones = set()
+    first_trace_for_zone = True
 
     # Add zones as filled polygon traces
     for i, (zone_name, zone_info) in enumerate(zone_data.items()):
@@ -558,6 +540,12 @@ def plot_zones_and_buses_mapbox(
             color = (
                 f"rgba({50 + (i*40)%200}, {100 + (i*70)%155}, {180 + (i*30)%75}, 0.35)"
             )
+
+        # uncomment to switch to adding each country to the legend
+        # check if this zone has already been added
+        # first_trace_for_zone = False
+        # if zone_legend:
+        #    first_trace_for_zone = zone_name not in seen_zones
 
         # MultiPolygon -> multiple polygon parts
         for poly in coords:
@@ -581,12 +569,18 @@ def plot_zones_and_buses_mapbox(
                     fill="toself",
                     fillcolor=color,
                     line=dict(color="black", width=1),
-                    name=country,
+                    # switch lines to switch to adding each country to the legend
+                    # name=country,
+                    name="Zones",
                     hoverinfo="text",
                     text=zone_name,
-                    showlegend=True,
+                    showlegend=first_trace_for_zone,
                 )
             )
+            # switch lines to switch to adding each country to the legend
+            # add zone to the seen zones set
+            # seen_zones.add(zone_name)
+            first_trace_for_zone = False
 
     # Add bus points
     bus_lons = []
@@ -609,7 +603,9 @@ def plot_zones_and_buses_mapbox(
             name="Buses",
         )
     )
+
     if branch_data:
+        branch_legend_added = False
         for branch, loc in branch_data.items():
             fig.add_trace(
                 go.Scattermapbox(
@@ -618,8 +614,11 @@ def plot_zones_and_buses_mapbox(
                     mode="lines",
                     line=dict(color="rgba(0, 0, 0, 0.5)", width=1),
                     name="Branches",
+                    legendgroup="Branches",
+                    showlegend=not branch_legend_added,
                 )
             )
+            branch_legend_added = True
 
     # Center map on data
     all_lons = []
@@ -647,7 +646,7 @@ def plot_zones_and_buses_mapbox(
             style=map_style, center=dict(lon=center_lon, lat=center_lat), zoom=8
         ),
         margin=dict(l=0, r=0, t=30, b=0),
-        title="Zones and Buses on Mapbox",
+        title="Baseline Branches and Buses by Country Zone",
     )
 
     fig.show()
