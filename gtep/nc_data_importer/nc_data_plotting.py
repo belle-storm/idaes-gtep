@@ -7,6 +7,8 @@ import colorsys
 import random
 import math
 import plotly.graph_objects as go
+from collections import Counter
+from collections import defaultdict
 
 
 def read_geojson(filepath):
@@ -652,32 +654,85 @@ def plot_zones_and_buses_mapbox(
     fig.show()
 
 
-if __name__ == "__main__":
-    # read location data
-    geojson_data = read_geojson(
-        "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
+def collect_unit_types_total(gen_data):
+    unit_types = []
+
+    for gen, gen_info in gen_data.items():
+        unit_types.append(gen_info["unit_type"])
+    return unit_types
+
+
+def collect_unit_by_zone(gen_data):
+    zone_counts = {}
+    for gen, gen_info in gen_data.items():
+        zone = gen_info.get("zone", "Unknown")
+        unit_type = gen_info.get("unit_type", "Unknown")
+        if zone != "Unknown" and zone not in zone_counts.keys():
+            zone_counts[zone] = {}
+        if unit_type != "Unknown":
+            if unit_type not in zone_counts[zone].keys():
+                zone_counts[zone][unit_type] = 0
+            zone_counts[zone][unit_type] += 1
+    return zone_counts
+
+
+def plot_fuel_pie(unit_types):
+    counts = Counter(unit_types)
+
+    fig = go.Figure(
+        data=[
+            go.Pie(
+                labels=list(counts.keys()),
+                values=list(counts.values()),
+                textinfo="label+percent",
+            )
+        ]
     )
+
+    fig.update_layout(title="Distribution of Generators by Unit Type")
+    fig.show()
+
+
+def plot_fuel_by_zone(zone_units):
+    # Get all zones and all unit types
+    zones = sorted(zone_units.keys())
+    all_unit_types = sorted(
+        {unit_type for counts in zone_units.values() for unit_type in counts.keys()}
+    )
+
+    fig = go.Figure()
+
+    for unit_type in all_unit_types:
+        values = [zone_units[zone].get(unit_type, 0) for zone in zones]
+
+        fig.add_trace(
+            go.Bar(
+                x=zones,
+                y=values,
+                name=unit_type,
+            )
+        )
+
+    fig.update_layout(
+        barmode="stack",
+        title="Distribution of Components by Zone and Unit Type",
+        xaxis_title="Zone",
+        yaxis_title="Number of Generators by Unit Type",
+        legend_title="Unit Type",
+    )
+
+    fig.show()
+
+
+def run_grid_location_workflow(bus_data, branch_data, geojson_path=None):
+    if geojson_path is None:
+        geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
+    # read location data
+    geojson_data = read_geojson(geojson_path)
     data = get_features(geojson_data)
     centroids = calculate_zone_centroids_from_geojson(geojson_data)
 
     zone_data = make_zone_dict(data, centroids)
-
-    # Open grid data
-    data_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/"
-    data_object = NCExpansionPlanningData(
-        stages=2,
-        num_reps=2,
-        len_reps=1,
-        num_commit=6,
-        num_dispatch=4,
-        duration_dispatch=15,
-    )
-    data_object.load_nc_data(data_path)
-
-    # grab grid data elements
-    grid_data = data_object.md.data
-    bus_data = grid_data["elements"]["bus"]
-    branch_data = grid_data["elements"]["branch"]
 
     # grab list of zones we need with a list of buses associated
     bus_zones = {}
@@ -704,4 +759,33 @@ if __name__ == "__main__":
     branch_by_centroid = assign_loc_to_branches(branch_data, bus_by_centroid)
 
     plot_zones_and_buses_mapbox(filt_zone, bus_by_centroid, branch_by_centroid)
+
+
+if __name__ == "__main__":
+
+    # Open grid data
+    data_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/"
+    data_object = NCExpansionPlanningData(
+        stages=2,
+        num_reps=2,
+        len_reps=1,
+        num_commit=6,
+        num_dispatch=4,
+        duration_dispatch=15,
+    )
+    data_object.load_nc_data(data_path)
+
+    # grab grid data elements
+    grid_data = data_object.md.data
+
+    # plot grid by location
+    # run_grid_location_workflow(grid_data["elements"]["bus"], grid_data["elements"]["branch"])
+
+    # plot total unit type distribution
+    # unit_types = collect_unit_types_total(grid_data["elements"]["generator"])
+    # plot_fuel_pie(unit_types)
+
+    # plot unit types by zone
+    # zone_units = collect_unit_by_zone(grid_data["elements"]["generator"])
+    # plot_fuel_by_zone(zone_units)
     pass
