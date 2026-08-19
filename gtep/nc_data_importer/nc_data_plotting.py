@@ -20,6 +20,7 @@ def gather_bus_details(bus_data):
     for bus_info in bus_data.values():
         zones.append(bus_info["zone"])
         num_buses += 1
+    zones = set(zones)
     return zones, num_buses
 
 
@@ -1254,7 +1255,8 @@ def run_gather_baseline_details_workflow(grid_data, excel_name=None):
     )
     gen_details = gather_gen_details(grid_data["elements"]["generator"])
     stor_details = gather_storage_details(grid_data["elements"]["storage"])
-    num_areas = len(grid_data["elements"]["area"])
+    areas = set(grid_data["elements"]["area"])
+    num_areas = len(areas)
     # get stats
 
     # save to dictionary
@@ -1378,9 +1380,9 @@ if __name__ == "__main__":
     # run_unit_type_plotting_workflow(grid_data['elements']['generator'], plot_type='bar')
 
     # get baseline info
-    # run_gather_baseline_details_workflow(
-    #     grid_data, "/Users/bstorm/Desktop/baseline_details.xlsx"
-    # )
+    run_gather_baseline_details_workflow(
+        grid_data, "/Users/bstorm/Desktop/baseline_details.xlsx"
+    )
 
     # zone_data = gather_details_by_zone(
     #     grid_data, "/Users/bstorm/Desktop/baseline_details.xlsx"
