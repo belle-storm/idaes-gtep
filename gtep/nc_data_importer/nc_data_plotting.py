@@ -157,10 +157,16 @@ def gather_details_by_zone(grid_data, excel_name=None):
             zones[bus_info["zone"]] = {"num_bus": 0}
         zones[bus_info["zone"]]["num_bus"] += 1
     # grab branch info
+    num_intrazone = 0
+    num_intrazone_DC = 0
     for br in [branch_data, dc_branch_data]:
         for branch in br.values():
             in_zone = bus_data[branch["from_bus"]]["zone"]
             out_zone = bus_data[branch["to_bus"]]["zone"]
+            if in_zone != out_zone:
+                num_intrazone += 1
+                if branch["carrier"] == "DC":
+                    num_intrazone_DC += 1
             for name, target in {"incoming": in_zone, "outgoing": out_zone}.items():
                 if target in zones.keys():
                     for item in ["capital_cost", "distance"]:
@@ -184,7 +190,8 @@ def gather_details_by_zone(grid_data, excel_name=None):
             if "gen_lifetime" not in zones[zone].keys():
                 zones[zone]["gen_lifetime"] = []
             zones[zone]["gen_count"] += 1
-            zones[zone]["gen_renewable_count"] += 1
+            if gen["generator_type"] == "renewable":
+                zones[zone]["gen_renewable_count"] += 1
             zones[zone]["gen_capital_cost"].append(float(gen["investment_cost"]))
             zones[zone]["gen_emissions_factor"].append(float(gen["emissions_factor"]))
             zones[zone]["gen_lifetime"].append(float(gen["lifetime"]))
@@ -878,45 +885,67 @@ def plot_zones_and_buses_mapbox(
 
 
 def collect_unit_types_total(gen_data):
-    unit_types = []
+    unit_types = {}
 
     for gen, gen_info in gen_data.items():
-        unit_types.append(gen_info["unit_type"])
+        unit_type = gen_info.get("unit_type", "Unknown")
+        if unit_type != "Unknown" and unit_type not in unit_types.keys():
+            # create the starting base
+            unit_types[unit_type] = 0
+        capacity = gen_info.get("p_max", 0)
+        unit_types[unit_type] += capacity
+
     return unit_types
 
 
-def collect_unit_by_zone(gen_data):
-    zone_counts = {}
+def collect_unit_by_zone(gen_data, percent=True):
+    zone_units = {}
+    zone_capacity = {}
     for gen, gen_info in gen_data.items():
         zone = gen_info.get("zone", "Unknown")
         unit_type = gen_info.get("unit_type", "Unknown")
-        if zone != "Unknown" and zone not in zone_counts.keys():
-            zone_counts[zone] = {}
+        capacity = gen_info.get("p_max", 0)
+        if zone != "Unknown" and zone not in zone_units.keys():
+            # create the starting base
+            zone_units[zone] = {}
+            zone_capacity[zone] = 0
         if unit_type != "Unknown":
-            if unit_type not in zone_counts[zone].keys():
-                zone_counts[zone][unit_type] = 0
-            zone_counts[zone][unit_type] += 1
-    return zone_counts
+            if unit_type not in zone_units[zone].keys():
+                zone_units[zone][unit_type] = 0
+            # add capacity of this unit to total and unit type capacity
+            zone_capacity[zone] += capacity
+            zone_units[zone][unit_type] += capacity
+    # iterate through zones and unit types
+    if percent:
+        for zone, unit_types in zone_units.items():
+            for unit, val in unit_types.items():
+                per_cap = 100.0 * zone_units[zone][unit] / zone_capacity[zone]
+                # replace with the percent capacity
+                zone_units[zone][unit] = per_cap
+    return zone_units
 
 
-def plot_fuel_pie(unit_types):
-    counts = Counter(unit_types)
+def plot_fuel_pie(capacity_by_type):
+    total_capacity = sum(capacity_by_type.values())
 
     fig = go.Figure(
         data=[
             go.Pie(
-                labels=list(counts.keys()),
-                values=list(counts.values()),
+                labels=list(capacity_by_type.keys()),
+                values=list(capacity_by_type.values()),
                 textinfo="label+percent",
+                hovertemplate=("%{label}: %{value} MW<br>" "%{percent}<extra></extra>"),
             )
         ]
     )
 
-    fig.update_layout(title="Distribution of Generators by Unit Type")
+    fig.update_layout(
+        title=f"Distribution of Generation Capacity by Unit Type (Total: {total_capacity})"
+    )
     fig.show()
 
 
-def plot_fuel_by_zone(zone_units):
+def plot_fuel_by_zone(zone_units, percent=True):
     # Get all zones and all unit types
     zones = sorted(zone_units.keys())
     all_unit_types = sorted(
@@ -936,11 +965,15 @@ def plot_fuel_by_zone(zone_units):
             )
         )
 
+    yaxis_title = "Generation Capacity by Unit Type"
+    if percent:
+        yaxis_title = "Percent of Generation Capacity by Unit Type"
+
     fig.update_layout(
         barmode="stack",
-        title="Distribution of Components by Zone and Unit Type",
+        title="Distribution of Capacity by Zone and Unit Type",
         xaxis_title="Zone",
-        yaxis_title="Number of Generators by Unit Type",
+        yaxis_title="Percent of Generation Capacity by Unit Type",
         legend_title="Unit Type",
     )
 
@@ -1230,7 +1263,7 @@ def run_grid_location_workflow(bus_data, branch_data, geojson_path=None):
     plot_renewable_percentage_map(filt_zone)
 
 
-def run_unit_type_plotting_workflow(gen_data, plot_type="pie"):
+def run_unit_type_plotting_workflow(gen_data, plot_type="pie", percent=True):
     VALID_PLOT_TYPE = ["pie", "bar"]
     if plot_type.lower() not in VALID_PLOT_TYPE:
         raise KeyError(
@@ -1243,8 +1276,8 @@ def run_unit_type_plotting_workflow(gen_data, plot_type="pie"):
         plot_fuel_pie(unit_types)
     elif plot_type == "bar":
         # plot unit types by zone
-        zone_units = collect_unit_by_zone(gen_data)
-        plot_fuel_by_zone(zone_units)
+        zone_units = collect_unit_by_zone(gen_data, percent)
+        plot_fuel_by_zone(zone_units, percent)
 
 
 def run_gather_baseline_details_workflow(grid_data, excel_name=None):
@@ -1371,21 +1404,32 @@ if __name__ == "__main__":
     # grab grid data elements
     grid_data = data_object.md.data
 
+    # zone_data = collect_unit_by_zone(grid_data["elements"]["generator"])
+
     # plot grid by location
     # run_grid_location_workflow(
     #     grid_data["elements"]["bus"], grid_data["elements"]["branch"]
     # )
 
     # plot units
-    # run_unit_type_plotting_workflow(grid_data['elements']['generator'], plot_type='bar')
-
-    # get baseline info
-    run_gather_baseline_details_workflow(
-        grid_data, "/Users/bstorm/Desktop/baseline_details.xlsx"
+    run_unit_type_plotting_workflow(
+        grid_data["elements"]["generator"], plot_type="bar", percent=False
     )
 
-    # zone_data = gather_details_by_zone(
+    # get baseline info
+    # run_gather_baseline_details_workflow(
     #     grid_data, "/Users/bstorm/Desktop/baseline_details.xlsx"
     # )
 
+    zone_data = gather_details_by_zone(
+        grid_data,
+        # "/Users/bstorm/Desktop/baseline_details.xlsx"
+    )
+    gen_deets = {}
+    for zone, deets in zone_data.items():
+        gen_deets[zone] = {
+            "num": deets["gen_count"],
+            "num_ren": deets["gen_renewable_count"],
+            "percent_ren": 100.0 * deets["gen_renewable_count"] / deets["gen_count"],
+        }
     pass
