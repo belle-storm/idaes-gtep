@@ -113,25 +113,25 @@ def make_zone_dict(geojson_data, centroids):
     zone_data = {}
     for ix in geojson_data:
         name = ix["properties"]["zoneName"]
-        countryName = ix["properties"]["countryName"]
-        countryKey = ix["properties"]["countryKey"]
         centroid = None
         if name in centroids.keys():
             centroid = centroids[name]
         zone_data[name] = {
-            "coordinates": ix["geometry"]["coordinates"],
+            "geometry": ix["geometry"],
             "centroid": centroid,
-            "countryName": countryName,
-            "countryKey": countryKey,
         }
+        if "countryName" in ix["properties"].keys():
+            zone_data[name]["countryName"] = ix["properties"]["countryName"]
+        if "countryKey" in ix["properties"].keys():
+            zone_data[name]["countryKey"] = ix["properties"]["countryKey"]
     return zone_data
 
 
-def retrieve_zone_loc_data(geojson_path):
+def retrieve_zone_loc_data(geojson_path, zone_name_key="zoneName"):
     # read location data
     geojson_data = read_geojson(geojson_path)
     data = get_features(geojson_data)
-    centroids = calculate_zone_centroids_from_geojson(geojson_data)
+    centroids = calculate_zone_centroids_from_geojson(geojson_data, zone_name_key)
 
     zone_data = make_zone_dict(data, centroids)
     return zone_data
