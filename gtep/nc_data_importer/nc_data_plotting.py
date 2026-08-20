@@ -106,8 +106,9 @@ def gen_counts_by_zone(gen_data):
             continue
         if gen_info["zone"] not in zone_count.keys():
             zone_count[gen_info["zone"]] = {"renewable": 0, "thermal": 0, "total": 0}
-        zone_count[gen_info["zone"]][gen_info["generator_type"]] += 1
-        zone_count[gen_info["zone"]]["total"] += 1
+        capacity = gen_info["p_max"]
+        zone_count[gen_info["zone"]][gen_info["generator_type"]] += capacity
+        zone_count[gen_info["zone"]]["total"] += capacity
     return zone_count
 
 
@@ -925,7 +926,7 @@ def collect_unit_by_zone(gen_data, percent=True):
     return zone_units
 
 
-def plot_fuel_pie(capacity_by_type):
+def plot_fuel_pie(capacity_by_type, title=None):
     total_capacity = sum(capacity_by_type.values())
 
     fig = go.Figure(
@@ -938,10 +939,10 @@ def plot_fuel_pie(capacity_by_type):
             )
         ]
     )
+    if title is None:
+        title = f"Distribution of Generation Capacity by Unit Type (Total: {total_capacity})"
 
-    fig.update_layout(
-        title=f"Distribution of Generation Capacity by Unit Type (Total: {total_capacity})"
-    )
+    fig.update_layout(title=title)
     fig.show()
 
 
@@ -1066,30 +1067,42 @@ def plot_branch_comparison(ac_branch, dc_branch, total):
     fig.show()
 
 
-def plot_renewable_percentage_map(zone_data, map_style="open-street-map"):
+def plot_renewable_percentage_map(zone_data, map_style="open-street-map", percent=True):
     """
     Plot MultiPolygon zones on a Mapbox/Plotly map, coloring each zone by
     renewable generator percentage.
     """
     fig = go.Figure()
 
-    # Gather renewable percentages
-    zone_percentages = {}
-    for zone_name, zone_info in zone_data.items():
-        renewable_count = zone_info.get("renewable", 0)
-        total_count = zone_info.get("total", 0)
+    if not percent:
+        title = "Renewable Generation Capacity by Zone"
+        unit_label = "Capacity"
+        # Gather renewable capacities
+        zone_renewables = {}
+        for zone_name, zone_info in zone_data.items():
+            renewable_capacity = zone_info.get("renewable", 0)
+            zone_renewables[zone_name] = renewable_capacity
 
-        if total_count and total_count > 0:
-            pct = 100.0 * renewable_count / total_count
-        else:
-            pct = 0.0
+    else:
+        title = "Percentage of Generation Capacity from Renewables by Zone"
+        unit_label = "%"
+        # Gather renewable percentages
+        zone_renewables = {}
+        for zone_name, zone_info in zone_data.items():
+            renewable_count = zone_info.get("renewable", 0)
+            total_count = zone_info.get("total", 0)
 
-        zone_percentages[zone_name] = pct
+            if total_count and total_count > 0:
+                pct = 100.0 * renewable_count / total_count
+            else:
+                pct = 0.0
+
+            zone_renewables[zone_name] = pct
 
     # Define colorscale and normalization range
     colorscale = "Viridis"
-    cmin = min(zone_percentages.values()) if zone_percentages else 0
-    cmax = max(zone_percentages.values()) if zone_percentages else 100
+    cmin = min(zone_renewables.values()) if zone_renewables else 0
+    cmax = max(zone_renewables.values()) if zone_renewables else 100
 
     def pct_to_color(pct):
         if cmax == cmin:
@@ -1103,7 +1116,7 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map"):
     # Add zones as filled polygon traces
     for zone_name, zone_info in zone_data.items():
         coords = zone_info["coordinates"]
-        pct = zone_percentages[zone_name]
+        pct = zone_renewables[zone_name]
         fill_color = pct_to_color(pct)
 
         for poly in coords:
@@ -1129,7 +1142,7 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map"):
                     line=dict(color="black", width=1),
                     name=zone_name,
                     hoverinfo="text",
-                    text=f"{zone_name}<br>Renewable: {pct:.1f}%",
+                    text=f"{zone_name}<br>Renewable: {pct:.1f}{unit_label}",
                     showlegend=False,
                 )
             )
@@ -1147,7 +1160,7 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map"):
                 cmax=cmax,
                 colorscale=colorscale,
                 showscale=True,
-                colorbar=dict(title="Renewable %"),
+                colorbar=dict(title=f"Renewable {unit_label}"),
             ),
             showlegend=False,
             hoverinfo="none",
@@ -1179,7 +1192,7 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map"):
             zoom=8,
         ),
         margin=dict(l=0, r=0, t=30, b=0),
-        title="Percentage of Renewable Generators by Zone",
+        title=title,
     )
 
     fig.show()
@@ -1217,7 +1230,7 @@ def plot_stacked_costs(cost_data):
     fig.show()
 
 
-def run_grid_location_workflow(bus_data, branch_data, geojson_path=None):
+def run_grid_location_workflow(bus_data, branch_data, geojson_path=None, percent=True):
     if geojson_path is None:
         geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
     # read location data
@@ -1254,13 +1267,13 @@ def run_grid_location_workflow(bus_data, branch_data, geojson_path=None):
         if zone_name in filt_zone:
             filt_zone[zone_name].update(renewable_vals)
 
-    bus_by_centroid = assign_centroid_to_bus(bus_zones, filt_zone)
+    # bus_by_centroid = assign_centroid_to_bus(bus_zones, filt_zone)
 
-    branch_by_centroid = assign_loc_to_branches(branch_data, bus_by_centroid)
+    # branch_by_centroid = assign_loc_to_branches(branch_data, bus_by_centroid)
 
-    plot_zones_and_buses_mapbox(filt_zone, bus_by_centroid, branch_by_centroid)
+    # plot_zones_and_buses_mapbox(filt_zone, bus_by_centroid, branch_by_centroid)
 
-    plot_renewable_percentage_map(filt_zone)
+    plot_renewable_percentage_map(filt_zone, percent=percent)
 
 
 def run_unit_type_plotting_workflow(gen_data, plot_type="pie", percent=True):
@@ -1404,32 +1417,42 @@ if __name__ == "__main__":
     # grab grid data elements
     grid_data = data_object.md.data
 
-    # zone_data = collect_unit_by_zone(grid_data["elements"]["generator"])
-
     # plot grid by location
     # run_grid_location_workflow(
-    #     grid_data["elements"]["bus"], grid_data["elements"]["branch"]
+    #     grid_data["elements"]["bus"], grid_data["elements"]["branch"], percent=False
     # )
 
     # plot units
-    run_unit_type_plotting_workflow(
-        grid_data["elements"]["generator"], plot_type="bar", percent=False
-    )
+    # run_unit_type_plotting_workflow(
+    #     grid_data["elements"]["generator"], plot_type="bar", percent=False
+    # )
+    geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
+    # read location data
+    geojson_data = read_geojson(geojson_path)
+    data = get_features(geojson_data)
+    centroids = calculate_zone_centroids_from_geojson(geojson_data)
+
+    zone_data = make_zone_dict(data, centroids)
+    zone_units = collect_unit_by_zone(grid_data["elements"]["generator"], percent=False)
+    for zone, unit_info in zone_units.items():
+        country = zone_data[zone]["countryName"]
+        title = f"{country}: Distribution of Generation Capacity by Unit Type"
+        plot_fuel_pie(unit_info, title)
 
     # get baseline info
     # run_gather_baseline_details_workflow(
     #     grid_data, "/Users/bstorm/Desktop/baseline_details.xlsx"
     # )
 
-    zone_data = gather_details_by_zone(
-        grid_data,
-        # "/Users/bstorm/Desktop/baseline_details.xlsx"
-    )
-    gen_deets = {}
-    for zone, deets in zone_data.items():
-        gen_deets[zone] = {
-            "num": deets["gen_count"],
-            "num_ren": deets["gen_renewable_count"],
-            "percent_ren": 100.0 * deets["gen_renewable_count"] / deets["gen_count"],
-        }
+    # zone_data = gather_details_by_zone(
+    #     grid_data,
+    #     # "/Users/bstorm/Desktop/baseline_details.xlsx"
+    # )
+    # gen_deets = {}
+    # for zone, deets in zone_data.items():
+    #     gen_deets[zone] = {
+    #         "num": deets["gen_count"],
+    #         "num_ren": deets["gen_renewable_count"],
+    #         "percent_ren": 100.0 * deets["gen_renewable_count"] / deets["gen_count"],
+    #     }
     pass
