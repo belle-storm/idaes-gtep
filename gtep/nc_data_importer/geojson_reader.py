@@ -112,8 +112,9 @@ def calculate_zone_centroids_from_geojson(geojson_data, zone_name_key="countryKe
 def make_zone_dict(geojson_data, centroids):
     zone_data = {}
     for ix in geojson_data:
-        name = ix["properties"]["countryKey"]
+        name = ix["properties"]["zoneName"]
         countryName = ix["properties"]["countryName"]
+        countryKey = ix["properties"]["countryKey"]
         centroid = None
         if name in centroids.keys():
             centroid = centroids[name]
@@ -121,18 +122,25 @@ def make_zone_dict(geojson_data, centroids):
             "coordinates": ix["geometry"]["coordinates"],
             "centroid": centroid,
             "countryName": countryName,
+            "countryKey": countryKey,
         }
+    return zone_data
+
+
+def retrieve_zone_loc_data(geojson_path):
+    # read location data
+    geojson_data = read_geojson(geojson_path)
+    data = get_features(geojson_data)
+    centroids = calculate_zone_centroids_from_geojson(geojson_data)
+
+    zone_data = make_zone_dict(data, centroids)
     return zone_data
 
 
 if __name__ == "__main__":
 
     geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
-    # # read location data
-    geojson_data = read_geojson(geojson_path)
-    data = get_features(geojson_data)
-    centroids = calculate_zone_centroids_from_geojson(geojson_data)
 
-    zone_data = make_zone_dict(data, centroids)
+    zone_data = retrieve_zone_loc_data(geojson_path)
 
     pass
