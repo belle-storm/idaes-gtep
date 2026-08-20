@@ -940,7 +940,7 @@ def plot_fuel_pie(capacity_by_type, title=None):
         ]
     )
     if title is None:
-        title = f"Distribution of Generation Capacity by Unit Type (Total: {total_capacity})"
+        title = f"Distribution of Generation Capacity by Unit Type (Total: {total_capacity} MW)"
 
     fig.update_layout(title=title)
     fig.show()
@@ -966,15 +966,15 @@ def plot_fuel_by_zone(zone_units, percent=True):
             )
         )
 
-    yaxis_title = "Generation Capacity by Unit Type"
+    yaxis_title = "Generation Capacity (MW) by Unit Type"
     if percent:
-        yaxis_title = "Percent of Generation Capacity by Unit Type"
+        yaxis_title = "Percent of Generation Capacity (MW) by Unit Type"
 
     fig.update_layout(
         barmode="stack",
         title="Distribution of Capacity by Zone and Unit Type",
         xaxis_title="Zone",
-        yaxis_title="Percent of Generation Capacity by Unit Type",
+        yaxis_title=yaxis_title,
         legend_title="Unit Type",
     )
 
@@ -1076,7 +1076,7 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map", percen
 
     if not percent:
         title = "Renewable Generation Capacity by Zone"
-        unit_label = "Capacity"
+        unit_label = "Capacity (MW)"
         # Gather renewable capacities
         zone_renewables = {}
         for zone_name, zone_info in zone_data.items():
@@ -1423,21 +1423,24 @@ if __name__ == "__main__":
     # )
 
     # plot units
+    run_unit_type_plotting_workflow(
+        grid_data["elements"]["generator"], plot_type="bar", percent=True
+    )
     # run_unit_type_plotting_workflow(
-    #     grid_data["elements"]["generator"], plot_type="bar", percent=False
+    #     grid_data["elements"]["generator"], plot_type="pie", percent=False
     # )
-    geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
-    # read location data
-    geojson_data = read_geojson(geojson_path)
-    data = get_features(geojson_data)
-    centroids = calculate_zone_centroids_from_geojson(geojson_data)
+    # geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
+    # # read location data
+    # geojson_data = read_geojson(geojson_path)
+    # data = get_features(geojson_data)
+    # centroids = calculate_zone_centroids_from_geojson(geojson_data)
 
-    zone_data = make_zone_dict(data, centroids)
-    zone_units = collect_unit_by_zone(grid_data["elements"]["generator"], percent=False)
-    for zone, unit_info in zone_units.items():
-        country = zone_data[zone]["countryName"]
-        title = f"{country}: Distribution of Generation Capacity by Unit Type"
-        plot_fuel_pie(unit_info, title)
+    # zone_data = make_zone_dict(data, centroids)
+    # zone_units = collect_unit_by_zone(grid_data["elements"]["generator"], percent=False)
+    # for zone, unit_info in zone_units.items():
+    #     country = zone_data[zone]["countryName"]
+    #     title = f"{country}: Distribution of Generation Capacity (MW) by Unit Type"
+    #     plot_fuel_pie(unit_info, title)
 
     # get baseline info
     # run_gather_baseline_details_workflow(
