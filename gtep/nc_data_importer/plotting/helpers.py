@@ -525,20 +525,34 @@ def point_in_polygon(x, y, polygon):
         return False
 
     inside = False
-    ring = polygon[:]
+    ring = close_ring(ring)
     if ring[0] != ring[-1]:
         ring = ring + [ring[0]]
 
     for i in range(len(ring) - 1):
-        x0, y0 = ring[i]
-        x1, y1 = ring[i + 1]
+        x1, y1 = ring[i]
+        x2, y2 = ring[i + 1]
 
-        if (y0 > y) != (y1 > y):
-            xinters = (x1 - x0) * (y - y0) / (y1 - y0 + 1e-15) + x0
-            if x < xinters:
-                inside = not inside
+        intersects = ((y1 > y) != (y2 > y)) and \
+                     (x < (x2 - x1) * (y - y1) / (y2 - y1 + 1e-20) + x1)
+
+        if intersects:
+            inside = not inside
 
     return inside
+
+def ensure_centroid_inside_zone(cx, cy, zone_outer_ring):
+    if point_in_polygon((cx, cy), zone_outer_ring):
+        return cx, cy
+
+    # fallback: use a vertex or average of vertices
+    for vx, vy in zone_outer_ring[:-1]:
+        if point_in_polygon((vx, vy), zone_outer_ring):
+            return vx, vy
+
+    # final fallback: original centroid
+    return cx, cy
+
 
 
 def point_in_multipolygon(x, y, multipolygon_coords):

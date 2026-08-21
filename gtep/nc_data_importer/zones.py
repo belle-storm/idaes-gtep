@@ -129,8 +129,94 @@ class Zone():
             centroids.append((cx, cy))
         return centroids
 
+    @staticmethod
+    def point_in_ring(point, ring):
+        """
+        Ray casting point-in-polygon test.
+        Returns True if point is inside the ring.
+        """
+        x, y = point
+        inside = False
+
+        ring = plt_help.close_ring(ring)
+
+        for i in range(len(ring) - 1):
+            x1, y1 = ring[i]
+            x2, y2 = ring[i + 1]
+
+            # Check if edge crosses horizontal ray to the right of point
+            intersects = ((y1 > y) != (y2 > y)) and (
+                x < (x2 - x1) * (y - y1) / ((y2 - y1) + 1e-20) + x1
+            )
+
+            if intersects:
+                inside = not inside
+
+        return inside
+
+    @staticmethod
+    def representative_point_for_ring(ring):
+        """
+        Return a point that is inside the ring if possible.
+        This is a base-Python fallback, not a true geometric interior-point algorithm.
+        """
+        ring = plt_help.close_ring(ring)
+
+        # 1. Try centroid
+        cx, cy, _ = Zone.polygon_centroid(ring)
+        if Zone.point_in_ring((cx, cy), ring):
+            return cx, cy
+
+        # 2. Try average of vertices
+        xs = [p[0] for p in ring[:-1]]
+        ys = [p[1] for p in ring[:-1]]
+        avgx = sum(xs) / len(xs)
+        avgy = sum(ys) / len(ys)
+        if Zone.point_in_ring((avgx, avgy), ring):
+            return avgx, avgy
+
+        # 3. Try any vertex that is inside
+        for vx, vy in ring[:-1]:
+            if Zone.point_in_ring((vx, vy), ring):
+                return vx, vy
+
+        # 4. Last resort: return first vertex
+        return ring[0][0], ring[0][1]
+
+    @staticmethod
+    def representative_point_for_part(part):
+        """
+        Return a representative point for a split part.
+        Assumes part is MultiPolygon-like:
+            [ [outer_ring], [outer_ring], ... ]
+        """
+        if not part:
+            raise ValueError("Empty part passed to representative_point_for_part")
+
+        # Try each polygon in the part, choose the largest one
+        largest_polygon = None
+        largest_area = -1.0
+
+        for polygon in part:
+            if not polygon or not polygon[0]:
+                continue
+
+            outer_ring = polygon[0]
+            _, _, area = Zone.polygon_centroid(outer_ring)
+
+            if area > largest_area:
+                largest_area = area
+                largest_polygon = outer_ring
+
+        if largest_polygon is None:
+            raise ValueError("No valid polygon found in part")
+
+        return Zone.representative_point_for_ring(largest_polygon)
+
     def split_into_parts(self):
         num_buses = len(self.buses)
+        if num_buses == 1:
+            self.buses[0].coordinates = self.centroid[0]
         #split the geometry into a section for each bus
         if num_buses > 1:
             parts = plt_help.split_multipolygon_into_n_equal_parts(self.coordinates, num_buses)
@@ -139,13 +225,30 @@ class Zone():
                     f"Expected {num_buses} parts, but got {len(parts)}"
                 )
             # Compute centroid of each part
-            centroids = self.centroids_for_parts(parts)
-            for ix, coords in enumerate(centroids):
-                self.centroid[ix] = coords
-                self.buses[ix].coordinates = coords
-        else:
-            for i, bus in enumerate(self.buses):
-                self.buses[i].coordinates = self.centroid[i]
+
+            # Use the first outer ring of the whole zone as the containment reference
+            if self.type == "MultiPolygon":
+                zone_outer_ring = self.coordinates[0][0]
+            elif self.type == "Polygon":
+                zone_outer_ring = self.coordinates[0]
+            else:
+                raise ValueError(f"Unsupported geometry type: {self.type}")
+
+            for ix, part in enumerate(parts):
+                # Compute a representative point for the part
+                if self.type == "MultiPolygon":
+                    cx, cy = self.representative_point_for_part(part)
+                else:
+                    # For a single polygon part
+                    cx, cy = self.representative_point_for_ring(part[0])
+
+                # Ensure point lies within the whole zone outer ring
+                if not self.point_in_ring((cx, cy), zone_outer_ring):
+                    # Try to correct by using the part's polygon representative point
+                    cx, cy = self.representative_point_for_part(part) if self.type == "MultiPolygon" else self.representative_point_for_ring(part[0])
+
+                self.centroid[ix] = (cx, cy)
+                self.buses[ix].coordinates = (cx, cy)
 
 
     def assign_location_to_buses(self):

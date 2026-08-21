@@ -284,7 +284,6 @@ def plot_zones_and_buses_mapbox(
 
     fig.show()
 
-
 def plot_renewable_percentage_map(zone_data, map_style="open-street-map", percent=True):
     """
     Plot MultiPolygon zones on a Mapbox/Plotly map, coloring each zone by
@@ -332,6 +331,7 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map", percen
     # Add zones as filled polygon traces
     for zone_name, zone_info in zone_data.items():
         coords = zone_info.coordinates
+        country = zone_info.countryName
         pct = zone_renewables[zone_name]
         fill_color = pct_to_color(pct)
 
@@ -352,13 +352,14 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map", percen
                 go.Scattermapbox(
                     lon=lons,
                     lat=lats,
-                    mode="lines",
+                    mode="lines+text",
                     fill="toself",
                     fillcolor=fill_color,
                     line=dict(color="black", width=1),
                     name=zone_name,
                     hoverinfo="text",
-                    text=f"{zone_name}<br>Renewable: {pct:.1f}{unit_label}",
+                    text = country,
+                    #text=f"{country}<br>Renewable: {pct:.1f}{unit_label}",
                     showlegend=False,
                 )
             )
@@ -424,6 +425,8 @@ def run_grid_location_workflow(geojson_path=None, percent=True):
     assign_centroid_to_bus(filtered_zones)
     branch_data = make_branches(grid_data['elements']['branch'],grid_data['elements']['dc_branch'], filtered_zones)
     plot_zones_and_buses_mapbox(filtered_zones, branch_data)
+    plot_renewable_percentage_map(filtered_zones)
+    pass
 
 
 if __name__ == "__main__":
