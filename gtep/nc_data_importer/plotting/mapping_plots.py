@@ -7,8 +7,105 @@ import plotly.colors as pc
 import gtep.nc_data_importer.geojson_reader as geo
 import gtep.nc_data_importer.plotting.helpers as plt_help
 
+def bus_by_zone(bus_data):
+    #grab the bus in each zone and area
+    bus_zones = {}
+    bus_areas = {}
+    for bus_name, bus_dict in bus_data.items():
+        country = bus_dict["zone"]
+        area = bus_name.split(" ")[0]
 
-def gen_counts_by_zone(gen_data):
+        #save country
+        if country not in bus_zones.keys():
+            bus_zones[country] = [bus_name]
+        else:
+            bus_zones[country].append(bus_name)
+        #save area
+        if area not in bus_areas.keys():
+            bus_areas[area] = [bus_name]
+        else:
+            bus_areas[area].append(bus_name)
+
+    return bus_zones, bus_areas
+
+def gen_by_zone(gen_data):
+    #grab the gen in each zone and area
+    gen_zones = {}
+    gen_areas = {}
+    for gen_name, gen_dict in gen_data.items():
+        if "c" in gen_name:
+            continue
+        country = gen_dict["zone"]
+        area = gen_name.split(" ")[0]
+        capacity = gen_dict["p_max"]
+        gen_type = gen_dict["generator_type"]
+
+        gen_info = {gen_name: {"type": gen_type, "capacity": capacity}}
+    
+        #save country
+        if country not in gen_zones.keys():
+            gen_zones[country] = [gen_info]
+        else:
+            gen_zones[country].append(gen_info)
+        #save area
+        if area not in gen_areas.keys():
+            gen_areas[area] = [gen_info]
+        else:
+            gen_areas[area].append(gen_info)
+    
+    return gen_zones, gen_areas
+
+def components_by_zone(zone_data, grid_data):
+    #filter zones by matching countries and assign components to zone
+    bus_zone, bus_area = bus_by_zone(grid_data['elements']['bus'])
+    gen_zone, gen_area = gen_by_zone(grid_data['elements']['generator'])
+
+    #filter zones to include full countries even if no buses in that area
+    filt_zone = {}
+    for z, info in zone_data.items():
+        if info['countryKey'] in bus_zone.keys():
+            filt_zone[z] = info
+            filt_zone[z]['buses'] = []
+        if info['countryKey'] in gen_zone.keys():
+            if z not in filt_zone.keys():
+                filt_zone[z] = info
+            filt_zone[z]['gens'] = []
+
+    #save buses to their zones
+    match_status = {i: False for i in bus_area.keys()}
+    for z in zone_data.keys():
+        for ix in bus_area.keys():
+            if ix in z:
+                filt_zone[z]["buses"] = bus_area[ix]
+                match_status[ix] = True
+        for g in gen_area.keys():
+            if g in z:
+                filt_zone[z]['gens'] = gen_area[g]
+    #catch stragglers and assign to any country zone that matches
+    for key, status in match_status.items():
+        if not status:
+            new_key = key[:-1]
+            for z in filt_zone.keys():
+                if new_key in z:
+                    filt_zone[z]['buses'] = bus_area[key]
+                    #debug check that everything found a home
+                    match_status[key] = True
+                    break
+
+    return filt_zone
+
+def gen_counts_by_zone(filt_zones):
+    #add capacity info by zone for each type
+    for z, info in filt_zones.items():
+        gen_data = info['gens']
+        capacity = {"renewable": 0, "thermal": 0, "total": 0}
+        for g in gen_data:
+            capacity['total'] += g['capacity']
+            capacity[g['type']] += g['capacity']
+        filt_zones[z]['total_generation'] = capacity['total']
+        filt_zones[z]['renewable_generation'] = capacity['renewable']
+        filt_zones[z]['thermal_generation'] = capacity['thermal']
+
     zone_count = {}
     for gen, gen_info in gen_data.items():
         if "c" in gen:
@@ -21,15 +118,10 @@ def gen_counts_by_zone(gen_data):
     return zone_count
 
 
-def assign_centroid_to_bus(bus_data, zone_data):
-    bus_by_centroid = {}
-    no_loc_data = []
-
-    for zone, bus_list in bus_data.items():
-        if zone not in zone_data:
-            no_loc_data.append(zone)
-            continue
-
+def assign_centroid_to_bus(filt_zones):
+    updated_zones = filt_zones
+    for zone, info in filt_zones:
+        bus_list = info['buses']
         num_buses = len(bus_list)
         zone_centroid = zone_data[zone]["centroid"]
         zone_coords = zone_data[zone]["coordinates"]
@@ -42,10 +134,13 @@ def assign_centroid_to_bus(bus_data, zone_data):
         )
 
         # points is guaranteed to match num_buses
+        bus_data = {}
         for bus, pt in zip(bus_list, points):
-            bus_by_centroid[bus] = pt
+            bus_data[bus] = pt
+        #replace bus list with assigned dictionary
+        updated_zones[zone]['buses'] = bus_data
 
-    return bus_by_centroid
+    return updated_zones
 
 
 def assign_loc_to_branches(branch_data, bus_centroids):
@@ -415,6 +510,7 @@ def run_grid_location_workflow(bus_data, branch_data, geojson_path=None, percent
         else:
             bus_zones[bus_dict["zone"]].append(bus_name)
         area = bus_name.split(" ")[0]
+        #area = f'{area[:-2]}_{area[-1]}'
         if area not in bus_areas.keys():
             bus_areas[area] = [bus_name]
         else:
@@ -422,11 +518,14 @@ def run_grid_location_workflow(bus_data, branch_data, geojson_path=None, percent
 
     # filter zone data to ones we need
     filt_zone = {}
-    for ix in bus_zones.keys():
-        for z in zone_data.keys():
+    for z in zone_data.keys():
+        target_loc = bus_zones
+        if '-' in z:
+            target_loc = bus_areas
+        for ix in target_loc.keys():
             if ix in z:
                 filt_zone[z] = zone_data[z]
-                filt_zone[z]["buses"] = bus_zones[ix]
+                filt_zone[z]["buses"] = target_loc[ix]
 
     # grab a random color for each zone
     color_map = plt_help.assign_distinct_colors(filt_zone.keys())
@@ -554,14 +653,15 @@ if __name__ == "__main__":
     # grab grid data elements
     grid_data = data_object.md.data
 
-    # geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
-    geojson_path = (
-        "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_entsoepy.geojson"
-    )
+    geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
+    # geojson_path = (
+    #     "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_entsoepy.geojson"
+    # )
 
     zone_data = geo.retrieve_zone_loc_data(geojson_path)
-    run_grid_location_workflow(
-        grid_data["elements"]["bus"], grid_data["elements"]["branch"], geojson_path
-    )
+    components_by_zone(zone_data, grid_data)
+    # run_grid_location_workflow(
+    #     grid_data["elements"]["bus"], grid_data["elements"]["branch"], geojson_path
+    # )
 
     pass

@@ -113,6 +113,9 @@ def make_zone_dict(geojson_data, centroids):
     zone_data = {}
     for ix in geojson_data:
         name = ix["properties"]["zoneName"]
+        #match naming convention to bus zones
+        if '-' not in name:
+            name = name + '1'
         centroid = None
         if name in centroids.keys():
             centroid = centroids[name]
@@ -133,8 +136,7 @@ def retrieve_zone_loc_data(geojson_path, zone_name_key="zoneName"):
     data = get_features(geojson_data)
     centroids = calculate_zone_centroids_from_geojson(geojson_data, zone_name_key)
 
-    zone_data = make_zone_dict(data, centroids)
-    return zone_data
+    return data, centroids
 
 
 if __name__ == "__main__":
