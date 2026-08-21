@@ -1,36 +1,51 @@
-import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon as MplPolygon
-from matplotlib.collections import PatchCollection
 from gtep.nc_data_importer.nc_data import NCExpansionPlanningData
 import plotly.graph_objects as go
 import plotly.colors as pc
 import gtep.nc_data_importer.geojson_reader as geo
-import gtep.nc_data_importer.plotting.helpers as plt_help
+from gtep.nc_data_importer.zones import Zone, Bus, Branch, Generator
 
-def bus_by_zone(bus_data):
-    #grab the bus in each zone and area
-    bus_zones = {}
+def load_zones(geojson_path, match_naming=True, zone_name_key="zoneName"):
+    geojson_data = geo.retrieve_zone_loc_data(geojson_path)
+    zone_data = {}
+    for zone in geojson_data:
+        #grab zone and country names
+        name = zone["properties"][zone_name_key]
+        countryName = None
+        countryKey = None
+        if "countryName" in zone["properties"].keys():
+            countryName = zone["properties"]["countryName"]
+        if "countryKey" in zone["properties"].keys():
+            countryKey = zone["properties"]["countryKey"]
+        #match naming convention to bus zones
+        if match_naming:
+            if '-' not in name:
+                name = name + '1'
+        #make a Zone object and save to dict
+        zObj =  Zone(name, countryKey, countryName)
+        zone_data[name] = zObj
+        #save location data to Zone object
+        zone_data[name].load_location_data(zone)
+        zObj.calculate_centroid()
+
+    return zone_data
+
+def bus_by_area(bus_data):
+    #grab the bus in each area
     bus_areas = {}
+    countries = []
     for bus_name, bus_dict in bus_data.items():
         country = bus_dict["zone"]
         area = bus_name.split(" ")[0]
-
-        #save country
-        if country not in bus_zones.keys():
-            bus_zones[country] = [bus_name]
-        else:
-            bus_zones[country].append(bus_name)
-        #save area
         if area not in bus_areas.keys():
-            bus_areas[area] = [bus_name]
-        else:
-            bus_areas[area].append(bus_name)
+            bus_areas[area] = []
+        countries.append(country)
+        bus_areas[area].append(Bus(bus_name, country, area))
+    countries = set(countries)
 
-    return bus_zones, bus_areas
+    return countries, bus_areas
 
-def gen_by_zone(gen_data):
+def gen_by_area(gen_data):
     #grab the gen in each zone and area
-    gen_zones = {}
     gen_areas = {}
     for gen_name, gen_dict in gen_data.items():
         if "c" in gen_name:
@@ -39,198 +54,113 @@ def gen_by_zone(gen_data):
         area = gen_name.split(" ")[0]
         capacity = gen_dict["p_max"]
         gen_type = gen_dict["generator_type"]
+        unit_type = gen_dict['unit_type']
 
-        gen_info = {gen_name: {"type": gen_type, "capacity": capacity}}
+        
+        gen = Generator(gen_name, country, area, capacity, gen_type, unit_type)
     
-        #save country
-        if country not in gen_zones.keys():
-            gen_zones[country] = [gen_info]
-        else:
-            gen_zones[country].append(gen_info)
         #save area
         if area not in gen_areas.keys():
-            gen_areas[area] = [gen_info]
+            gen_areas[area] = [gen]
         else:
-            gen_areas[area].append(gen_info)
+            gen_areas[area].append(gen)
     
-    return gen_zones, gen_areas
+    return gen_areas
+
+def adjust_bus_zone(filt_zones, countries):
+    #if there is more than one bus in a zone,
+    #check if there are empty zones in that country 
+    #move a bus to an empty zone
+    #iterate through this until zone only has 1 
+    #or until all zones in that country are filled
+    #combine zones into countries
+    for country in countries:
+        zones = {}
+        #grab all the zones in this country
+        for z in filt_zones.values():
+            if z.countryKey == country:
+                num_bus = len(z.buses)
+                zones[z] = num_bus
+        #check if there is an empty zone
+        if max(zones.values()) > 1 and min(zones.values()) < 1:
+            above = {k: v for k, v in zones.items() if v > 1}
+            no = [k for k, v in zones.items() if v < 1]
+            for zn in above.keys():
+                for bus in zn.buses:
+                    if no:
+                        no_bus_zone = no[-1]
+                        no_bus_zone.buses.append(bus)
+                        #remove from their original lists
+                        no.pop()
+                        zn.buses.remove(bus)
 
 def components_by_zone(zone_data, grid_data):
     #filter zones by matching countries and assign components to zone
-    bus_zone, bus_area = bus_by_zone(grid_data['elements']['bus'])
-    gen_zone, gen_area = gen_by_zone(grid_data['elements']['generator'])
+    country_list, bus_area = bus_by_area(grid_data['elements']['bus'])
+    gen_area = gen_by_area(grid_data['elements']['generator'])
 
     #filter zones to include full countries even if no buses in that area
     filt_zone = {}
     for z, info in zone_data.items():
-        if info['countryKey'] in bus_zone.keys():
+        if info.countryKey in country_list:
             filt_zone[z] = info
-            filt_zone[z]['buses'] = []
-        if info['countryKey'] in gen_zone.keys():
-            if z not in filt_zone.keys():
-                filt_zone[z] = info
-            filt_zone[z]['gens'] = []
 
     #save buses to their zones
     match_status = {i: False for i in bus_area.keys()}
     for z in zone_data.keys():
-        for ix in bus_area.keys():
+        for ix, Bus in bus_area.items():
             if ix in z:
-                filt_zone[z]["buses"] = bus_area[ix]
+                filt_zone[z].buses = bus_area[ix]
                 match_status[ix] = True
-        for g in gen_area.keys():
+        for g, Gen in gen_area.items():
             if g in z:
-                filt_zone[z]['gens'] = gen_area[g]
+                filt_zone[z].generators = gen_area[g]
     #catch stragglers and assign to any country zone that matches
     for key, status in match_status.items():
         if not status:
             new_key = key[:-1]
             for z in filt_zone.keys():
                 if new_key in z:
-                    filt_zone[z]['buses'] = bus_area[key]
+                    filt_zone[z].buses = bus_area[key]
                     #debug check that everything found a home
                     match_status[key] = True
                     break
 
+    #rework bus association
+    adjust_bus_zone(filt_zone, country_list)
+
     return filt_zone
 
-def gen_counts_by_zone(filt_zones):
+def gen_capacity_by_zone(filt_zones):
     #add capacity info by zone for each type
     for z, info in filt_zones.items():
-        gen_data = info['gens']
+        gen_data = info.generators
         capacity = {"renewable": 0, "thermal": 0, "total": 0}
         for g in gen_data:
-            capacity['total'] += g['capacity']
-            capacity[g['type']] += g['capacity']
-        filt_zones[z]['total_generation'] = capacity['total']
-        filt_zones[z]['renewable_generation'] = capacity['renewable']
-        filt_zones[z]['thermal_generation'] = capacity['thermal']
-
-    zone_count = {}
-    for gen, gen_info in gen_data.items():
-        if "c" in gen:
-            continue
-        if gen_info["zone"] not in zone_count.keys():
-            zone_count[gen_info["zone"]] = {"renewable": 0, "thermal": 0, "total": 0}
-        capacity = gen_info["p_max"]
-        zone_count[gen_info["zone"]][gen_info["generator_type"]] += capacity
-        zone_count[gen_info["zone"]]["total"] += capacity
-    return zone_count
-
+            capacity['total'] += g.capacity
+            capacity[g.gen_type] += g.capacity
+        filt_zones[z].capacity = capacity['total']
+        filt_zones[z].renewable_capacity = capacity['renewable']
+        filt_zones[z].thermal_capacity = capacity['thermal']
 
 def assign_centroid_to_bus(filt_zones):
-    updated_zones = filt_zones
-    for zone, info in filt_zones:
-        bus_list = info['buses']
-        num_buses = len(bus_list)
-        zone_centroid = zone_data[zone]["centroid"]
-        zone_coords = zone_data[zone]["coordinates"]
+    for zone in filt_zones.values():
+        zone.split_into_parts()
+        #zone.assign_location_to_buses()
 
-        points = plt_help.generate_points_around_centroid(
-            centroid=zone_centroid,
-            multipolygon_coords=zone_coords,
-            num_points=num_buses,
-            min_sep=0.5,
-        )
-
-        # points is guaranteed to match num_buses
-        bus_data = {}
-        for bus, pt in zip(bus_list, points):
-            bus_data[bus] = pt
-        #replace bus list with assigned dictionary
-        updated_zones[zone]['buses'] = bus_data
-
-    return updated_zones
-
-
-def assign_loc_to_branches(branch_data, bus_centroids):
-    branch_by_centroid = {}
-    for branch, info in branch_data.items():
-        if info["from_bus"] in bus_centroids.keys():
-            if info["to_bus"] in bus_centroids.keys():
-                lat = [
-                    bus_centroids[info["from_bus"]][0],
-                    bus_centroids[info["to_bus"]][0],
-                ]
-                lon = [
-                    bus_centroids[info["from_bus"]][1],
-                    bus_centroids[info["to_bus"]][1],
-                ]
-
-                branch_by_centroid[branch] = (lat, lon)
-    return branch_by_centroid
-
-
-def plot_grid(zone_data, bus_data=None, branch_data=None):
-
-    fig, ax = plt.subplots(figsize=(12, 8))
-
-    # Plot zones
-    patches = []
-    colors = []
-    for zone, info in zone_data.items():
-        geom = info["coordinates"]
-        color = info["color"]
-
-        for ring in plt_help._iter_rings(geom):
-            # GeoJSON uses [lon, lat], matplotlib expects x=lon, y=lat
-            patches.append(MplPolygon(ring, closed=True))
-            colors.append(color)
-
-    if patches:
-        collection = PatchCollection(
-            patches,
-            facecolor=colors,
-            edgecolor="black",
-            linewidth=1.0,
-            alpha=0.4,
-        )
-        ax.add_collection(collection)
-
-    if bus_data:
-        for bus, loc in bus_data.items():
-            ax.scatter(
-                loc[0],
-                loc[1],
-                color="black",
-                edgecolors="black",
-                s=15,
-                zorder=4,
-                alpha=0.4,
-                label=bus,
-            )
-
-    if branch_data:
-        for branch, loc in branch_data.items():
-            ax.plot(
-                loc[0],
-                loc[1],
-                color="black",
-                linewidth=2,
-                linestyle="--",
-                zorder=3,
-                label=branch,
-            )
-
-    ax.autoscale()
-
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
-    ax.set_title("Grid Layout")
-    ax.grid(True, linewidth=0.3, alpha=0.5)
-
-    plt.tight_layout()
-    plt.savefig("zones_and_components.png", dpi=300, bbox_inches="tight")
-    plt.close()
-
+def make_branches(ac_branch_data, dc_branch_data, filtered_zones):
+    branch_list = []
+    for branch_data in [ac_branch_data, dc_branch_data]:
+        for name, info in branch_data.items():
+            b = Branch(name, info['carrier'])
+            b.associate_bus(filtered_zones, info['from_bus'], info['to_bus'])
+            branch_list.append(b)
+    return branch_list
 
 def plot_zones_and_buses_mapbox(
     zone_data,
-    bus_positions,
     branch_data=None,
     zone_colors=None,
-    zone_legend=True,
     map_style="open-street-map",
 ):
     """
@@ -238,26 +168,21 @@ def plot_zones_and_buses_mapbox(
     """
     fig = go.Figure()
 
-    # uncomment to switch to adding each country to the legend
-    # Track which zone legends have already been added
-    # seen_zones = set()
     first_trace_for_zone = True
+    # Add bus points
+    bus_lons = []
+    bus_lats = []
+    bus_text = []
 
     # Add zones as filled polygon traces
     for i, (zone_name, zone_info) in enumerate(zone_data.items()):
-        coords = zone_info["coordinates"]
-        country = zone_info["countryName"]
+        coords = zone_info.coordinates
+        country = zone_info.countryName
         color = zone_colors.get(zone_name, None) if zone_colors else None
         if color is None:
             color = (
                 f"rgba({50 + (i*40)%200}, {100 + (i*70)%155}, {180 + (i*30)%75}, 0.35)"
             )
-
-        # uncomment to switch to adding each country to the legend
-        # check if this zone has already been added
-        # first_trace_for_zone = False
-        # if zone_legend:
-        #    first_trace_for_zone = zone_name not in seen_zones
 
         # MultiPolygon -> multiple polygon parts
         for poly in coords:
@@ -281,44 +206,40 @@ def plot_zones_and_buses_mapbox(
                     fill="toself",
                     fillcolor=color,
                     line=dict(color="black", width=1),
-                    # switch lines to switch to adding each country to the legend
-                    # name=country,
                     name="Zones",
                     hoverinfo="text",
                     text=zone_name,
                     showlegend=first_trace_for_zone,
                 )
             )
-            # switch lines to switch to adding each country to the legend
-            # add zone to the seen zones set
-            # seen_zones.add(zone_name)
             first_trace_for_zone = False
 
-    # Add bus points
-    bus_lons = []
-    bus_lats = []
-    bus_text = []
+        for bus in zone_info.buses:
+            lon = bus.coordinates[0]
+            lat = bus.coordinates[1]
+            bus_lons.append(lon)
+            bus_lats.append(lat)
+            bus_text.append(bus.name)
 
-    for bus_name, (lon, lat) in bus_positions.items():
-        bus_lons.append(lon)
-        bus_lats.append(lat)
-        bus_text.append(bus_name)
-
+    #plot all buses
     fig.add_trace(
         go.Scattermapbox(
             lon=bus_lons,
             lat=bus_lats,
-            mode="markers+text",
-            marker=dict(size=10, color="rgba(255, 0, 0, 0.5)"),
-            # text=bus_text,
+            mode="markers",
+            marker=dict(size=5, color="rgba(255, 0, 0, 0.5)"),
+            hoverinfo="text",
+            text=bus_text,
             # textposition="top center",
             name="Buses",
         )
     )
 
+    #plot branch data
     if branch_data:
         branch_legend_added = False
-        for branch, loc in branch_data.items():
+        for branch in branch_data:
+            loc = branch.coordinates
             fig.add_trace(
                 go.Scattermapbox(
                     lon=loc[0],
@@ -337,7 +258,7 @@ def plot_zones_and_buses_mapbox(
     all_lats = []
 
     for zone_info in zone_data.values():
-        for poly in zone_info["coordinates"]:
+        for poly in zone_info.coordinates:
             if not poly or not poly[0]:
                 continue
             for pt in poly[0]:
@@ -370,24 +291,22 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map", percen
     renewable generator percentage.
     """
     fig = go.Figure()
-
+    zone_renewables = {}
     if not percent:
         title = "Renewable Generation Capacity by Zone"
         unit_label = "Capacity (MW)"
         # Gather renewable capacities
-        zone_renewables = {}
         for zone_name, zone_info in zone_data.items():
-            renewable_capacity = zone_info.get("renewable", 0)
+            renewable_capacity = zone_info.renewable_capacity
             zone_renewables[zone_name] = renewable_capacity
 
     else:
         title = "Percentage of Generation Capacity from Renewables by Zone"
         unit_label = "%"
         # Gather renewable percentages
-        zone_renewables = {}
         for zone_name, zone_info in zone_data.items():
-            renewable_count = zone_info.get("renewable", 0)
-            total_count = zone_info.get("total", 0)
+            renewable_count = zone_info.renewable_capacity
+            total_count = zone_info.capacity
 
             if total_count and total_count > 0:
                 pct = 100.0 * renewable_count / total_count
@@ -412,7 +331,7 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map", percen
 
     # Add zones as filled polygon traces
     for zone_name, zone_info in zone_data.items():
-        coords = zone_info["coordinates"]
+        coords = zone_info.coordinates
         pct = zone_renewables[zone_name]
         fill_color = pct_to_color(pct)
 
@@ -469,7 +388,7 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map", percen
     all_lats = []
 
     for zone_info in zone_data.values():
-        for poly in zone_info["coordinates"]:
+        for poly in zone_info.coordinates:
             if not poly or not poly[0]:
                 continue
             for pt in poly[0]:
@@ -495,145 +414,16 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map", percen
     fig.show()
 
 
-def run_grid_location_workflow(bus_data, branch_data, geojson_path=None, percent=True):
+def run_grid_location_workflow(geojson_path=None, percent=True):
     if geojson_path is None:
         geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
 
-    zone_data = geo.retrieve_zone_loc_data(geojson_path)
-
-    # grab list of zones we need with a list of buses associated
-    bus_zones = {}
-    bus_areas = {}
-    for bus_name, bus_dict in bus_data.items():
-        if bus_dict["zone"] not in bus_zones.keys():
-            bus_zones[bus_dict["zone"]] = [bus_name]
-        else:
-            bus_zones[bus_dict["zone"]].append(bus_name)
-        area = bus_name.split(" ")[0]
-        #area = f'{area[:-2]}_{area[-1]}'
-        if area not in bus_areas.keys():
-            bus_areas[area] = [bus_name]
-        else:
-            bus_areas[area].append(bus_name)
-
-    # filter zone data to ones we need
-    filt_zone = {}
-    for z in zone_data.keys():
-        target_loc = bus_zones
-        if '-' in z:
-            target_loc = bus_areas
-        for ix in target_loc.keys():
-            if ix in z:
-                filt_zone[z] = zone_data[z]
-                filt_zone[z]["buses"] = target_loc[ix]
-
-    # grab a random color for each zone
-    color_map = plt_help.assign_distinct_colors(filt_zone.keys())
-    for ix, val in color_map.items():
-        filt_zone[ix]["color"] = val
-
-    # find percentage renewable gen by zone
-    gen_details = gen_counts_by_zone(grid_data["elements"]["generator"])
-
-    for zone_name, renewable_vals in gen_details.items():
-        if zone_name in filt_zone:
-            filt_zone[zone_name].update(renewable_vals)
-
-    # bus_by_centroid = assign_centroid_to_bus(bus_zones, filt_zone)
-
-    # branch_by_centroid = assign_loc_to_branches(branch_data, bus_by_centroid)
-
-    # plot_zones_and_buses_mapbox(filt_zone, bus_by_centroid, branch_by_centroid)
-
-    plot_zones(filt_zone)
-
-    # plot_renewable_percentage_map(filt_zone, percent=percent)
-
-
-def plot_zones(
-    zone_data,
-    map_style="open-street-map",
-):
-    """
-    Plot Polygon and MultiPolygon zones on a Mapbox/Plotly map.
-    """
-    fig = go.Figure()
-    first_trace_for_zone = True
-
-    # Collect all coordinates for centering the map
-    all_lons = []
-    all_lats = []
-
-    for i, (zone_name, zone_info) in enumerate(zone_data.items()):
-        geometry = zone_info["geometry"]
-        coords = geometry["coordinates"]
-        geo_type = geometry["type"]
-
-        color = f"rgba({50 + (i*40)%200}, {100 + (i*70)%155}, {180 + (i*30)%75}, 0.35)"
-
-        # Normalize to a list of polygon parts:
-        # - Polygon: coords = [outer_ring, hole1, hole2, ...]
-        # - MultiPolygon: coords = [[outer_ring, ...], [outer_ring, ...], ...]
-        if geo_type == "Polygon":
-            polygon_parts = [coords]
-        elif geo_type == "MultiPolygon":
-            polygon_parts = coords
-        else:
-            # Skip unsupported geometry types
-            continue
-
-        for poly in polygon_parts:
-            if not poly or not poly[0]:
-                continue
-
-            outer_ring = poly[0]
-            lons = [pt[0] for pt in outer_ring]
-            lats = [pt[1] for pt in outer_ring]
-
-            # Close ring if needed
-            if lons[0] != lons[-1] or lats[0] != lats[-1]:
-                lons.append(lons[0])
-                lats.append(lats[0])
-
-            # Add to centering lists
-            all_lons.extend(lons)
-            all_lats.extend(lats)
-
-            fig.add_trace(
-                go.Scattermapbox(
-                    lon=lons,
-                    lat=lats,
-                    mode="lines",
-                    fill="toself",
-                    fillcolor=color,
-                    line=dict(color="black", width=1),
-                    name=zone_name,
-                    hoverinfo="text",
-                    text=zone_name,
-                    showlegend=first_trace_for_zone,
-                )
-            )
-
-            first_trace_for_zone = False
-
-    # Center map on data
-    if all_lons and all_lats:
-        center_lon = sum(all_lons) / len(all_lons)
-        center_lat = sum(all_lats) / len(all_lats)
-    else:
-        center_lon, center_lat = 0, 0
-
-    fig.update_layout(
-        mapbox=dict(
-            style=map_style,
-            center=dict(lon=center_lon, lat=center_lat),
-            zoom=8,
-        ),
-        margin=dict(l=0, r=0, t=30, b=0),
-        title="Zones",
-    )
-
-    fig.show()
+    zone_data = load_zones(geojson_path)
+    filtered_zones = components_by_zone(zone_data, grid_data)
+    gen_capacity_by_zone(filtered_zones)
+    assign_centroid_to_bus(filtered_zones)
+    branch_data = make_branches(grid_data['elements']['branch'],grid_data['elements']['dc_branch'], filtered_zones)
+    plot_zones_and_buses_mapbox(filtered_zones, branch_data)
 
 
 if __name__ == "__main__":
@@ -658,10 +448,6 @@ if __name__ == "__main__":
     #     "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_entsoepy.geojson"
     # )
 
-    zone_data = geo.retrieve_zone_loc_data(geojson_path)
-    components_by_zone(zone_data, grid_data)
-    # run_grid_location_workflow(
-    #     grid_data["elements"]["bus"], grid_data["elements"]["branch"], geojson_path
-    # )
+    run_grid_location_workflow(geojson_path)
 
     pass

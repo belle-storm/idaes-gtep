@@ -36,10 +36,36 @@ def jitter_pattern(center, n, scale):
         pts.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
     return pts
 
+def dedupe_ring(ring):
+    """
+    Remove consecutive duplicate points.
+    """
+    if not ring:
+        return ring
+
+    out = [ring[0]]
+    for pt in ring[1:]:
+        if normalize_pt(pt) != normalize_pt(out[-1]):
+            out.append(pt)
+
+    # Also remove last point if same as first before closing
+    if len(out) > 1 and normalize_pt(out[0]) == normalize_pt(out[-1]):
+        out.pop()
+
+    return out
 
 def normalize_pt(pt):
     return (round(pt[0], 10), round(pt[1], 10))
 
+def close_ring(coords):
+    """
+    Ensure a ring is closed.
+    """
+    if not coords:
+        return coords
+    if coords[0] != coords[-1]:
+        coords = coords + [coords[0]]
+    return coords
 
 def get_outer_rings_from_multipolygon(multipolygon_coords):
     """
@@ -47,6 +73,448 @@ def get_outer_rings_from_multipolygon(multipolygon_coords):
     Returns a list of flat rings.
     """
     return [polygon[0] for polygon in multipolygon_coords if polygon and polygon[0]]
+
+
+def ring_area(coords):
+    """
+    Signed area of a closed ring using the shoelace formula.
+    """
+    coords = close_ring(coords)
+    area2 = 0.0
+    for i in range(len(coords) - 1):
+        x0, y0 = coords[i]
+        x1, y1 = coords[i + 1]
+        area2 += x0 * y1 - x1 * y0
+    return area2 / 2.0
+
+
+def polygon_area(polygon):
+    """
+    Area of a GeoJSON polygon structure:
+    polygon = [outer_ring, hole1, hole2, ...]
+    """
+    if not polygon or not polygon[0]:
+        return 0.0
+
+    outer = abs(ring_area(polygon[0]))
+    holes = sum(abs(ring_area(hole)) for hole in polygon[1:] if hole)
+    return outer - holes
+
+def multipolygon_area(multipolygon_coords):
+    """
+    Total area of all polygons in a MultiPolygon.
+    """
+    return sum(polygon_area(poly) for poly in multipolygon_coords if poly)
+
+def polygon_centroid(coords):
+    """
+    Compute centroid of a single polygon ring using the shoelace formula.
+    Returns (cx, cy, abs(area)).
+    """
+    coords = close_ring(coords)
+
+    area2 = 0.0
+    cx = 0.0
+    cy = 0.0
+
+    for i in range(len(coords) - 1):
+        x0, y0 = coords[i]
+        x1, y1 = coords[i + 1]
+        cross = x0 * y1 - x1 * y0
+        area2 += cross
+        cx += (x0 + x1) * cross
+        cy += (y0 + y1) * cross
+
+    area = area2 / 2.0
+
+    if abs(area) < 1e-12:
+        xs = [p[0] for p in coords[:-1]]
+        ys = [p[1] for p in coords[:-1]]
+        return sum(xs) / len(xs), sum(ys) / len(ys), 0.0
+
+    cx /= 3.0 * area2
+    cy /= 3.0 * area2
+
+    return cx, cy, abs(area)
+
+
+def multipolygon_centroid(multipolygon_coords):
+    """
+    Compute centroid for a MultiPolygon by area-weighting each polygon centroid.
+    """
+    total_area = 0.0
+    weighted_cx = 0.0
+    weighted_cy = 0.0
+
+    for polygon in multipolygon_coords:
+        if not polygon or not polygon[0]:
+            continue
+        outer_ring = polygon[0]
+        cx, cy, area = polygon_centroid(outer_ring)
+
+        if area > 0:
+            total_area += area
+            weighted_cx += cx * area
+            weighted_cy += cy * area
+
+    if total_area == 0:
+        centroids = [polygon_centroid(poly[0])[:2] for poly in multipolygon_coords if poly and poly[0]]
+        xs = [c[0] for c in centroids]
+        ys = [c[1] for c in centroids]
+        return sum(xs) / len(xs), sum(ys) / len(ys)
+
+    return weighted_cx / total_area, weighted_cy / total_area
+
+def multipolygon_bounds(multipolygon_coords):
+    """
+    Bounds of all outer rings in a MultiPolygon.
+    """
+    xs = []
+    ys = []
+
+    for ring in get_outer_rings_from_multipolygon(multipolygon_coords):
+        for x, y in ring:
+            xs.append(x)
+            ys.append(y)
+
+    if not xs or not ys:
+        raise ValueError("Empty multipolygon coordinates")
+
+    return min(xs), min(ys), max(xs), max(ys)
+
+def intersect_vertical(p1, p2, xcut):
+    """
+    Intersection of segment p1->p2 with vertical line x = xcut.
+    """
+    x1, y1 = p1
+    x2, y2 = p2
+
+    if abs(x2 - x1) < 1e-12:
+        return (xcut, y1)
+
+    t = (xcut - x1) / (x2 - x1)
+    y = y1 + t * (y2 - y1)
+    return (xcut, y)
+
+
+def intersect_horizontal(p1, p2, ycut):
+    """
+    Intersection of segment p1->p2 with horizontal line y = ycut.
+    """
+    x1, y1 = p1
+    x2, y2 = p2
+
+    if abs(y2 - y1) < 1e-12:
+        return (x1, ycut)
+
+    t = (ycut - y1) / (y2 - y1)
+    x = x1 + t * (x2 - x1)
+    return (x, ycut)
+
+def clip_ring_to_left_of_vertical(ring, xcut):
+    """
+    Clip a ring to x <= xcut.
+    Returns a new ring or [] if empty.
+    """
+    ring = close_ring(ring)
+    output = []
+
+    for i in range(len(ring) - 1):
+        curr = ring[i]
+        nxt = ring[i + 1]
+
+        curr_inside = curr[0] <= xcut
+        next_inside = nxt[0] <= xcut
+
+        if curr_inside and next_inside:
+            output.append(nxt)
+        elif curr_inside and not next_inside:
+            inter = intersect_vertical(curr, nxt, xcut)
+            output.append(inter)
+        elif not curr_inside and next_inside:
+            inter = intersect_vertical(curr, nxt, xcut)
+            output.append(inter)
+            output.append(nxt)
+
+    output = dedupe_ring(output)
+    if len(output) < 3:
+        return []
+    return close_ring(output)
+
+
+def clip_ring_to_right_of_vertical(ring, xcut):
+    """
+    Clip a ring to x >= xcut.
+    """
+    ring = close_ring(ring)
+    output = []
+
+    for i in range(len(ring) - 1):
+        curr = ring[i]
+        nxt = ring[i + 1]
+
+        curr_inside = curr[0] >= xcut
+        next_inside = nxt[0] >= xcut
+
+        if curr_inside and next_inside:
+            output.append(nxt)
+        elif curr_inside and not next_inside:
+            inter = intersect_vertical(curr, nxt, xcut)
+            output.append(inter)
+        elif not curr_inside and next_inside:
+            inter = intersect_vertical(curr, nxt, xcut)
+            output.append(inter)
+            output.append(nxt)
+
+    output = dedupe_ring(output)
+    if len(output) < 3:
+        return []
+    return close_ring(output)
+
+def clip_ring_to_bottom_of_horizontal(ring, ycut):
+    """
+    Clip a ring to y <= ycut.
+    """
+    ring = close_ring(ring)
+    output = []
+
+    for i in range(len(ring) - 1):
+        curr = ring[i]
+        nxt = ring[i + 1]
+
+        curr_inside = curr[1] <= ycut
+        next_inside = nxt[1] <= ycut
+
+        if curr_inside and next_inside:
+            output.append(nxt)
+        elif curr_inside and not next_inside:
+            inter = intersect_horizontal(curr, nxt, ycut)
+            output.append(inter)
+        elif not curr_inside and next_inside:
+            inter = intersect_horizontal(curr, nxt, ycut)
+            output.append(inter)
+            output.append(nxt)
+
+    output = dedupe_ring(output)
+    if len(output) < 3:
+        return []
+    return close_ring(output)
+
+
+def clip_ring_to_top_of_horizontal(ring, ycut):
+    """
+    Clip a ring to y >= ycut.
+    """
+    ring = close_ring(ring)
+    output = []
+
+    for i in range(len(ring) - 1):
+        curr = ring[i]
+        nxt = ring[i + 1]
+
+        curr_inside = curr[1] >= ycut
+        next_inside = nxt[1] >= ycut
+
+        if curr_inside and next_inside:
+            output.append(nxt)
+        elif curr_inside and not next_inside:
+            inter = intersect_horizontal(curr, nxt, ycut)
+            output.append(inter)
+        elif not curr_inside and next_inside:
+            inter = intersect_horizontal(curr, nxt, ycut)
+            output.append(inter)
+            output.append(nxt)
+
+    output = dedupe_ring(output)
+    if len(output) < 3:
+        return []
+    return close_ring(output)
+
+def clip_polygon_left_of_vertical(polygon, xcut):
+    """
+    Clip a polygon (outer ring only) to x <= xcut.
+    Returns a polygon-like structure: [outer_ring].
+    """
+    if not polygon or not polygon[0]:
+        return []
+
+    clipped_outer = clip_ring_to_left_of_vertical(polygon[0], xcut)
+    if not clipped_outer:
+        return []
+    return [clipped_outer]
+
+
+def clip_polygon_right_of_vertical(polygon, xcut):
+    if not polygon or not polygon[0]:
+        return []
+
+    clipped_outer = clip_ring_to_right_of_vertical(polygon[0], xcut)
+    if not clipped_outer:
+        return []
+    return [clipped_outer]
+
+
+def clip_polygon_bottom_of_horizontal(polygon, ycut):
+    if not polygon or not polygon[0]:
+        return []
+
+    clipped_outer = clip_ring_to_bottom_of_horizontal(polygon[0], ycut)
+    if not clipped_outer:
+        return []
+    return [clipped_outer]
+
+
+def clip_polygon_top_of_horizontal(polygon, ycut):
+    if not polygon or not polygon[0]:
+        return []
+
+    clipped_outer = clip_ring_to_top_of_horizontal(polygon[0], ycut)
+    if not clipped_outer:
+        return []
+    return [clipped_outer]
+
+def multipolygon_area_simple(multipolygon_coords):
+    """
+    Total area using only outer rings.
+    """
+    total = 0.0
+    for poly in multipolygon_coords:
+        if poly and poly[0]:
+            total += abs(ring_area(poly[0]))
+    return total
+
+def find_vertical_cut_for_half_area(multipolygon_coords, tol=1e-9, max_iter=80):
+    """
+    Find xcut such that area left of xcut is approximately half the total area.
+    """
+    minx, miny, maxx, maxy = multipolygon_bounds(multipolygon_coords)
+    total_area = multipolygon_area_simple(multipolygon_coords)
+    target = total_area / 2.0
+
+    low = minx
+    high = maxx
+
+    for _ in range(max_iter):
+        mid = (low + high) / 2.0
+
+        left_parts = []
+        for poly in multipolygon_coords:
+            clipped = clip_polygon_left_of_vertical(poly, mid)
+            if clipped:
+                left_parts.append(clipped)
+
+        left_area = multipolygon_area_simple(left_parts)
+
+        if abs(left_area - target) <= tol * max(1.0, total_area):
+            return mid
+
+        if left_area < target:
+            low = mid
+        else:
+            high = mid
+
+    return (low + high) / 2.0
+
+
+def find_horizontal_cut_for_half_area(multipolygon_coords, tol=1e-9, max_iter=80):
+    """
+    Find ycut such that area below ycut is approximately half the total area.
+    """
+    minx, miny, maxx, maxy = multipolygon_bounds(multipolygon_coords)
+    total_area = multipolygon_area_simple(multipolygon_coords)
+    target = total_area / 2.0
+
+    low = miny
+    high = maxy
+
+    for _ in range(max_iter):
+        mid = (low + high) / 2.0
+
+        bottom_parts = []
+        for poly in multipolygon_coords:
+            clipped = clip_polygon_bottom_of_horizontal(poly, mid)
+            if clipped:
+                bottom_parts.append(clipped)
+
+        bottom_area = multipolygon_area_simple(bottom_parts)
+
+        if abs(bottom_area - target) <= tol * max(1.0, total_area):
+            return mid
+
+        if bottom_area < target:
+            low = mid
+        else:
+            high = mid
+
+    return (low + high) / 2.0
+
+def split_multipolygon_into_two(multipolygon_coords):
+    """
+    Split into two approximately equal-area parts.
+    Returns [part1, part2].
+    """
+    minx, miny, maxx, maxy = multipolygon_bounds(multipolygon_coords)
+    dx = maxx - minx
+    dy = maxy - miny
+
+    if dx >= dy:
+        xcut = find_vertical_cut_for_half_area(multipolygon_coords)
+
+        left = []
+        right = []
+
+        for poly in multipolygon_coords:
+            lp = clip_polygon_left_of_vertical(poly, xcut)
+            rp = clip_polygon_right_of_vertical(poly, xcut)
+            if lp:
+                left.append(lp)
+            if rp:
+                right.append(rp)
+
+        return left, right
+
+    else:
+        ycut = find_horizontal_cut_for_half_area(multipolygon_coords)
+
+        bottom = []
+        top = []
+
+        for poly in multipolygon_coords:
+            bp = clip_polygon_bottom_of_horizontal(poly, ycut)
+            tp = clip_polygon_top_of_horizontal(poly, ycut)
+            if bp:
+                bottom.append(bp)
+            if tp:
+                top.append(tp)
+
+        return bottom, top
+
+def split_multipolygon_into_n_equal_parts(multipolygon_coords, n):
+    """
+    Recursively split the largest part until n parts are created.
+    Returns a list of MultiPolygon-like parts.
+    """
+    if n < 1:
+        raise ValueError("n must be >= 1")
+
+    parts = [multipolygon_coords]
+
+    while len(parts) < n:
+        # split the largest part next
+        parts.sort(key=multipolygon_area_simple, reverse=True)
+        largest = parts.pop(0)
+
+        p1, p2 = split_multipolygon_into_two(largest)
+
+        # If split failed, put it back and stop
+        if not p1 or not p2:
+            parts.append(largest)
+            break
+
+        parts.append(p1)
+        parts.append(p2)
+
+    return parts[:n]
 
 
 def point_in_polygon(x, y, polygon):
@@ -81,24 +549,6 @@ def point_in_multipolygon(x, y, multipolygon_coords):
         if point_in_polygon(x, y, ring):
             return True
     return False
-
-
-def multipolygon_bounds(multipolygon_coords):
-    """
-    Bounds of all outer rings in a MultiPolygon.
-    """
-    xs = []
-    ys = []
-
-    for ring in get_outer_rings_from_multipolygon(multipolygon_coords):
-        for x, y in ring:
-            xs.append(x)
-            ys.append(y)
-
-    if not xs or not ys:
-        raise ValueError("Empty multipolygon coordinates")
-
-    return min(xs), min(ys), max(xs), max(ys)
 
 
 def find_interior_point_near_centroid(
