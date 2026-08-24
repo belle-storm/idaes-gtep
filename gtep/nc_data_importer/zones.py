@@ -298,25 +298,24 @@ class Branch:
         self.coordinates = None
         self.type = br_type
 
-    def associate_bus(self, zones, from_bus, to_bus):
+    def associate_bus(self, buses, from_bus, to_bus):
+        self.from_bus = from_bus
+        self.to_bus = to_bus
         from_lat = None
         from_lon = None
         to_lat = None
         to_lon = None
-        for zone in zones.values():
-            for bus in zone.buses:
-                if from_bus == bus.name:
-                    from_lat = bus.coordinates[0]
-                    from_lon = bus.coordinates[1]
-                    zone.branches.append(self)
-                    bus.branches.append(self)
-                    self.from_country = bus.countryKey
-                if to_bus == bus.name:
-                    to_lat = bus.coordinates[0]
-                    to_lon = bus.coordinates[1]
-                    zone.branches.append(self)
-                    bus.branches.append(self)
-                    self.to_country = bus.countryKey
+        for bus in buses:
+            if from_bus == bus.name:
+                from_lat = bus.coordinates[0]
+                from_lon = bus.coordinates[1]
+                bus.branches.append(self)
+                self.from_country = bus.countryKey
+            if to_bus == bus.name:
+                to_lat = bus.coordinates[0]
+                to_lon = bus.coordinates[1]
+                bus.branches.append(self)
+                self.to_country = bus.countryKey
         lat = [from_lat, to_lat]
         lon = [from_lon, to_lon]
         self.coordinates = (lat, lon)

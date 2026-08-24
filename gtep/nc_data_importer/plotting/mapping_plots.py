@@ -145,7 +145,7 @@ def components_by_zone(zone_data, grid_data):
             new_key = key[:-1]
             for z in filt_zone.keys():
                 if new_key in z:
-                    filt_zone[z].buses = bus_area[key]
+                    filt_zone[z].buses.extend(bus_area[key])
                     # debug check that everything found a home
                     match_status[key] = True
                     break
@@ -219,12 +219,12 @@ def manually_adjust_bus_coords(all_buses):
         busObj.coordinates = item["new"]
 
 
-def make_branches(ac_branch_data, dc_branch_data, filtered_zones):
+def make_branches(ac_branch_data, dc_branch_data, buses):
     branch_list = []
     for branch_data in [ac_branch_data, dc_branch_data]:
         for name, info in branch_data.items():
             b = Branch(name, info["carrier"])
-            b.associate_bus(filtered_zones, info["from_bus"], info["to_bus"])
+            b.associate_bus(buses, info["from_bus"], info["to_bus"])
             branch_list.append(b)
     return branch_list
 
@@ -312,7 +312,6 @@ def plot_zones_and_buses_mapbox(
         branch_legend_added = False
         for branch in branch_data:
             loc = branch.coordinates
-            print(branch.coordinates)
             fig.add_trace(
                 go.Scattermapbox(
                     lon=loc[0],
@@ -498,11 +497,12 @@ def run_grid_location_workflow(geojson_path=None, percent=True):
     gen_capacity_by_zone(filtered_zones)
     assign_centroid_to_bus(filtered_zones)
     buses = grab_all_buses(filtered_zones)
+    bus_names = [bus.name for bus in buses]
     manually_adjust_bus_coords(buses)
     branch_data = make_branches(
         grid_data["elements"]["branch"],
         grid_data["elements"]["dc_branch"],
-        filtered_zones,
+        buses,
     )
     plot_zones_and_buses_mapbox(filtered_zones, branch_data)
     plot_renewable_percentage_map(filtered_zones)
