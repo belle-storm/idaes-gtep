@@ -4,11 +4,12 @@ import plotly.colors as pc
 import gtep.nc_data_importer.geojson_reader as geo
 from gtep.nc_data_importer.zones import Zone, Bus, Branch, Generator
 
+
 def load_zones(geojson_path, match_naming=True, zone_name_key="zoneName"):
     geojson_data = geo.retrieve_zone_loc_data(geojson_path)
     zone_data = {}
     for zone in geojson_data:
-        #grab zone and country names
+        # grab zone and country names
         name = zone["properties"][zone_name_key]
         countryName = None
         countryKey = None
@@ -16,21 +17,22 @@ def load_zones(geojson_path, match_naming=True, zone_name_key="zoneName"):
             countryName = zone["properties"]["countryName"]
         if "countryKey" in zone["properties"].keys():
             countryKey = zone["properties"]["countryKey"]
-        #match naming convention to bus zones
+        # match naming convention to bus zones
         if match_naming:
-            if '-' not in name:
-                name = name + '1'
-        #make a Zone object and save to dict
-        zObj =  Zone(name, countryKey, countryName)
+            if "-" not in name:
+                name = name + "1"
+        # make a Zone object and save to dict
+        zObj = Zone(name, countryKey, countryName)
         zone_data[name] = zObj
-        #save location data to Zone object
+        # save location data to Zone object
         zone_data[name].load_location_data(zone)
         zObj.calculate_centroid()
 
     return zone_data
 
+
 def bus_by_area(bus_data):
-    #grab the bus in each area
+    # grab the bus in each area
     bus_areas = {}
     countries = []
     for bus_name, bus_dict in bus_data.items():
@@ -44,8 +46,9 @@ def bus_by_area(bus_data):
 
     return countries, bus_areas
 
+
 def gen_by_area(gen_data):
-    #grab the gen in each zone and area
+    # grab the gen in each zone and area
     gen_areas = {}
     for gen_name, gen_dict in gen_data.items():
         if "c" in gen_name:
@@ -54,34 +57,34 @@ def gen_by_area(gen_data):
         area = gen_name.split(" ")[0]
         capacity = gen_dict["p_max"]
         gen_type = gen_dict["generator_type"]
-        unit_type = gen_dict['unit_type']
+        unit_type = gen_dict["unit_type"]
 
-        
         gen = Generator(gen_name, country, area, capacity, gen_type, unit_type)
-    
-        #save area
+
+        # save area
         if area not in gen_areas.keys():
             gen_areas[area] = [gen]
         else:
             gen_areas[area].append(gen)
-    
+
     return gen_areas
 
+
 def adjust_bus_zone(filt_zones, countries):
-    #if there is more than one bus in a zone,
-    #check if there are empty zones in that country 
-    #move a bus to an empty zone
-    #iterate through this until zone only has 1 
-    #or until all zones in that country are filled
-    #combine zones into countries
+    # if there is more than one bus in a zone,
+    # check if there are empty zones in that country
+    # move a bus to an empty zone
+    # iterate through this until zone only has 1
+    # or until all zones in that country are filled
+    # combine zones into countries
     for country in countries:
         zones = {}
-        #grab all the zones in this country
+        # grab all the zones in this country
         for z in filt_zones.values():
             if z.countryKey == country:
                 num_bus = len(z.buses)
                 zones[z] = num_bus
-        #check if there is an empty zone
+        # check if there is an empty zone
         if max(zones.values()) > 1 and min(zones.values()) < 1:
             above = {k: v for k, v in zones.items() if v > 1}
             no = [k for k, v in zones.items() if v < 1]
@@ -90,22 +93,43 @@ def adjust_bus_zone(filt_zones, countries):
                     if no:
                         no_bus_zone = no[-1]
                         no_bus_zone.buses.append(bus)
-                        #remove from their original lists
+                        # remove from their original lists
                         no.pop()
                         zn.buses.remove(bus)
 
-def components_by_zone(zone_data, grid_data):
-    #filter zones by matching countries and assign components to zone
-    country_list, bus_area = bus_by_area(grid_data['elements']['bus'])
-    gen_area = gen_by_area(grid_data['elements']['generator'])
 
-    #filter zones to include full countries even if no buses in that area
+def manually_adjust_zone_assignement(filt_zones):
+    SE_buses = {}
+    NO_buses = {}
+    for name, zones in filt_zones.items():
+        if zones.countryKey == "SE":
+            for bus in zones.buses:
+                SE_buses[bus] = name
+        elif zones.countryKey == "NO":
+            for bus in zones.buses:
+                NO_buses[bus] = name
+    for bus, og_zone in SE_buses.items():
+        if bus.name == "SE2 0":
+            filt_zones["SE-SE4"].buses.append(bus)
+            filt_zones[og_zone].buses.remove(bus)
+    for bus, og_zone in NO_buses.items():
+        if bus.name == "NO2 0":
+            filt_zones["NO-NO3"].buses.append(bus)
+            filt_zones[og_zone].buses.remove(bus)
+
+
+def components_by_zone(zone_data, grid_data):
+    # filter zones by matching countries and assign components to zone
+    country_list, bus_area = bus_by_area(grid_data["elements"]["bus"])
+    gen_area = gen_by_area(grid_data["elements"]["generator"])
+
+    # filter zones to include full countries even if no buses in that area
     filt_zone = {}
     for z, info in zone_data.items():
         if info.countryKey in country_list:
             filt_zone[z] = info
 
-    #save buses to their zones
+    # save buses to their zones
     match_status = {i: False for i in bus_area.keys()}
     for z in zone_data.keys():
         for ix, Bus in bus_area.items():
@@ -115,47 +139,95 @@ def components_by_zone(zone_data, grid_data):
         for g, Gen in gen_area.items():
             if g in z:
                 filt_zone[z].generators = gen_area[g]
-    #catch stragglers and assign to any country zone that matches
+    # catch stragglers and assign to any country zone that matches
     for key, status in match_status.items():
         if not status:
             new_key = key[:-1]
             for z in filt_zone.keys():
                 if new_key in z:
                     filt_zone[z].buses = bus_area[key]
-                    #debug check that everything found a home
+                    # debug check that everything found a home
                     match_status[key] = True
                     break
 
-    #rework bus association
+    # rework bus association
     adjust_bus_zone(filt_zone, country_list)
+    manually_adjust_zone_assignement(filt_zone)
 
     return filt_zone
 
+
 def gen_capacity_by_zone(filt_zones):
-    #add capacity info by zone for each type
+    # add capacity info by zone for each type
     for z, info in filt_zones.items():
         gen_data = info.generators
         capacity = {"renewable": 0, "thermal": 0, "total": 0}
         for g in gen_data:
-            capacity['total'] += g.capacity
+            capacity["total"] += g.capacity
             capacity[g.gen_type] += g.capacity
-        filt_zones[z].capacity = capacity['total']
-        filt_zones[z].renewable_capacity = capacity['renewable']
-        filt_zones[z].thermal_capacity = capacity['thermal']
+        filt_zones[z].capacity = capacity["total"]
+        filt_zones[z].renewable_capacity = capacity["renewable"]
+        filt_zones[z].thermal_capacity = capacity["thermal"]
+
 
 def assign_centroid_to_bus(filt_zones):
     for zone in filt_zones.values():
         zone.split_into_parts()
-        #zone.assign_location_to_buses()
+        # zone.assign_location_to_buses()
+
+
+def grab_all_buses(filt_zones):
+    all_buses = []
+    for zone in filt_zones.values():
+        all_buses.extend(zone.buses)
+    return all_buses
+
+
+def manually_adjust_bus_coords(all_buses):
+
+    old_to_new = {
+        "GB6 0 battery": "GB6 0 H2",
+        "GB6 0 H2": "GB6 0",
+        "GB6 0": "GB6 0 battery",
+        "DE1 0": "DE1 1",
+        "DE1 1": "DE1 0",
+        "DE1 4": "DE1 2 H2",
+        "DE1 2 H2": "DE1 4",
+        "DK1 0": "DK1 0 H2",
+        "DK1 0 H2": "DK1 0",
+        "NL1 0": "NL1 0 battery",
+        "NL1 0 battery": "NL1 0",
+        "FI2 0": "FI2 0 battery",
+        "FI2 0 battery": "FI2 0",
+        "EE7 0": "EE7 0 battery",
+        "EE7 0 battery": "EE7 0",
+        "LV7 0": "LV7 0 battery",
+        "LV7 0 battery": "LV7 0",
+        "LT7 0": "LT7 0 battery",
+        "LT7 0 battery": "LT7 0",
+    }
+    target_buses = {
+        n: {"og": None, "new": None, "object": None} for n in old_to_new.keys()
+    }
+    for bus in all_buses:
+        if bus.name in target_buses.keys():
+            target_buses[bus.name]["og"] = bus.coordinates
+            target_buses[bus.name]["object"] = bus
+            target_buses[old_to_new[bus.name]]["new"] = bus.coordinates
+    for item in target_buses.values():
+        busObj = item["object"]
+        busObj.coordinates = item["new"]
+
 
 def make_branches(ac_branch_data, dc_branch_data, filtered_zones):
     branch_list = []
     for branch_data in [ac_branch_data, dc_branch_data]:
         for name, info in branch_data.items():
-            b = Branch(name, info['carrier'])
-            b.associate_bus(filtered_zones, info['from_bus'], info['to_bus'])
+            b = Branch(name, info["carrier"])
+            b.associate_bus(filtered_zones, info["from_bus"], info["to_bus"])
             branch_list.append(b)
     return branch_list
+
 
 def plot_zones_and_buses_mapbox(
     zone_data,
@@ -221,7 +293,7 @@ def plot_zones_and_buses_mapbox(
             bus_lats.append(lat)
             bus_text.append(bus.name)
 
-    #plot all buses
+    # plot all buses
     fig.add_trace(
         go.Scattermapbox(
             lon=bus_lons,
@@ -235,17 +307,18 @@ def plot_zones_and_buses_mapbox(
         )
     )
 
-    #plot branch data
+    # plot branch data
     if branch_data:
         branch_legend_added = False
         for branch in branch_data:
             loc = branch.coordinates
+            print(branch.coordinates)
             fig.add_trace(
                 go.Scattermapbox(
                     lon=loc[0],
                     lat=loc[1],
                     mode="lines",
-                    line=dict(color="rgba(0, 0, 0, 0.5)", width=1),
+                    line=dict(color="rgba(0, 0, 0, 0.5)", width=2),
                     name="Branches",
                     legendgroup="Branches",
                     showlegend=not branch_legend_added,
@@ -283,6 +356,7 @@ def plot_zones_and_buses_mapbox(
     )
 
     fig.show()
+
 
 def plot_renewable_percentage_map(zone_data, map_style="open-street-map", percent=True):
     """
@@ -352,14 +426,14 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map", percen
                 go.Scattermapbox(
                     lon=lons,
                     lat=lats,
-                    mode="lines+text",
+                    mode="lines",
                     fill="toself",
                     fillcolor=fill_color,
                     line=dict(color="black", width=1),
                     name=zone_name,
                     hoverinfo="text",
-                    text = country,
-                    #text=f"{country}<br>Renewable: {pct:.1f}{unit_label}",
+                    text=country,
+                    # text=f"{country}<br>Renewable: {pct:.1f}{unit_label}",
                     showlegend=False,
                 )
             )
@@ -423,7 +497,13 @@ def run_grid_location_workflow(geojson_path=None, percent=True):
     filtered_zones = components_by_zone(zone_data, grid_data)
     gen_capacity_by_zone(filtered_zones)
     assign_centroid_to_bus(filtered_zones)
-    branch_data = make_branches(grid_data['elements']['branch'],grid_data['elements']['dc_branch'], filtered_zones)
+    buses = grab_all_buses(filtered_zones)
+    manually_adjust_bus_coords(buses)
+    branch_data = make_branches(
+        grid_data["elements"]["branch"],
+        grid_data["elements"]["dc_branch"],
+        filtered_zones,
+    )
     plot_zones_and_buses_mapbox(filtered_zones, branch_data)
     plot_renewable_percentage_map(filtered_zones)
     pass

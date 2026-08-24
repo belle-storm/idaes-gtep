@@ -1,13 +1,14 @@
 import gtep.nc_data_importer.plotting.helpers as plt_help
 
-class Zone():
+
+class Zone:
     def __init__(self, zoneName, countryKey=None, countryName=None):
         self.zoneName = zoneName
         self.countryKey = countryKey
         self.countryName = countryName
         self.type = None
         self.coordinates = None
-        self.centroid = {} #to support section-based centroids
+        self.centroid = {}  # to support section-based centroids
         self.buses = []
         self.generators = []
         self.branches = []
@@ -15,10 +16,10 @@ class Zone():
         self.renewable_capacity = 0
         self.thermal_capacity = 0
         self.fuel_types = {}
-    
+
     def load_location_data(self, geojson_data):
-        self.coordinates = geojson_data['geometry']['coordinates']
-        self.type = geojson_data['geometry']['type']
+        self.coordinates = geojson_data["geometry"]["coordinates"]
+        self.type = geojson_data["geometry"]["type"]
 
     @staticmethod
     def polygon_centroid(coords):
@@ -31,7 +32,9 @@ class Zone():
 
         # If coords is a single point like [x, y], fail clearly
         if len(coords) < 3 or not isinstance(coords[0], (list, tuple)):
-            raise ValueError(f"polygon_centroid expected ring coordinates, got: {coords}")
+            raise ValueError(
+                f"polygon_centroid expected ring coordinates, got: {coords}"
+            )
 
         if coords[0] != coords[-1]:
             coords = coords + [coords[0]]
@@ -79,7 +82,9 @@ class Zone():
 
         # If this looks like a Polygon: [outer_ring, hole1, ...]
         # wrap as a multipolygon with one polygon
-        elif isinstance(multipolygon_coords[0][0], (list, tuple)) and isinstance(multipolygon_coords[0][0][0], (int, float)):
+        elif isinstance(multipolygon_coords[0][0], (list, tuple)) and isinstance(
+            multipolygon_coords[0][0][0], (int, float)
+        ):
             multipolygon_coords = [multipolygon_coords]
 
         total_area = 0.0
@@ -99,7 +104,11 @@ class Zone():
                 weighted_cy += cy * area
 
         if total_area == 0:
-            centroids = [Zone.polygon_centroid(poly[0])[:2] for poly in multipolygon_coords if poly and poly[0]]
+            centroids = [
+                Zone.polygon_centroid(poly[0])[:2]
+                for poly in multipolygon_coords
+                if poly and poly[0]
+            ]
             xs = [c[0] for c in centroids]
             ys = [c[1] for c in centroids]
             return sum(xs) / len(xs), sum(ys) / len(ys)
@@ -113,7 +122,7 @@ class Zone():
 
         if self.type == "Polygon":
             cx, cy, _ = self.polygon_centroid(self.coordinates[0])
-        elif self.type  == "MultiPolygon":
+        elif self.type == "MultiPolygon":
             cx, cy = self.multipolygon_centroid(self.coordinates)
 
         self.centroid[0] = (cx, cy)
@@ -217,13 +226,13 @@ class Zone():
         num_buses = len(self.buses)
         if num_buses == 1:
             self.buses[0].coordinates = self.centroid[0]
-        #split the geometry into a section for each bus
+        # split the geometry into a section for each bus
         if num_buses > 1:
-            parts = plt_help.split_multipolygon_into_n_equal_parts(self.coordinates, num_buses)
+            parts = plt_help.split_multipolygon_into_n_equal_parts(
+                self.coordinates, num_buses
+            )
             if len(parts) != num_buses:
-                raise ValueError(
-                    f"Expected {num_buses} parts, but got {len(parts)}"
-                )
+                raise ValueError(f"Expected {num_buses} parts, but got {len(parts)}")
             # Compute centroid of each part
 
             # Use the first outer ring of the whole zone as the containment reference
@@ -245,28 +254,32 @@ class Zone():
                 # Ensure point lies within the whole zone outer ring
                 if not self.point_in_ring((cx, cy), zone_outer_ring):
                     # Try to correct by using the part's polygon representative point
-                    cx, cy = self.representative_point_for_part(part) if self.type == "MultiPolygon" else self.representative_point_for_ring(part[0])
+                    cx, cy = (
+                        self.representative_point_for_part(part)
+                        if self.type == "MultiPolygon"
+                        else self.representative_point_for_ring(part[0])
+                    )
 
                 self.centroid[ix] = (cx, cy)
                 self.buses[ix].coordinates = (cx, cy)
 
-
     def assign_location_to_buses(self):
         bus_list = self.buses
         num_buses = len(bus_list)
-        
+
         points = plt_help.generate_points_around_centroid(
             centroid=self.centroid,
             multipolygon_coords=self.coordinates,
             num_points=num_buses,
             min_sep=0.5,
         )
-        
+
         # points is guaranteed to match num_buses
         for bus, pt in zip(bus_list, points):
             bus.coordinates = pt
 
-class Bus():
+
+class Bus:
     def __init__(self, name, countryKey, zoneName):
         self.name = name
         self.countryKey = countryKey
@@ -274,7 +287,8 @@ class Bus():
         self.coordinates = None
         self.branches = []
 
-class Branch():
+
+class Branch:
     def __init__(self, name, br_type):
         self.name = name
         self.from_bus = None
@@ -297,7 +311,7 @@ class Branch():
                     zone.branches.append(self)
                     bus.branches.append(self)
                     self.from_country = bus.countryKey
-                if to_bus == bus:
+                if to_bus == bus.name:
                     to_lat = bus.coordinates[0]
                     to_lon = bus.coordinates[1]
                     zone.branches.append(self)
@@ -307,7 +321,8 @@ class Branch():
         lon = [from_lon, to_lon]
         self.coordinates = (lat, lon)
 
-class Generator():
+
+class Generator:
     def __init__(self, name, countryKey, zoneName, capacity, gen_type, unit_type):
         self.name = name
         self.countryKey = countryKey
@@ -315,4 +330,3 @@ class Generator():
         self.capacity = capacity
         self.gen_type = gen_type
         self.unit_type = unit_type
-    

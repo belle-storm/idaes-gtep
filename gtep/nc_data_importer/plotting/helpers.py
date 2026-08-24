@@ -36,6 +36,7 @@ def jitter_pattern(center, n, scale):
         pts.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
     return pts
 
+
 def dedupe_ring(ring):
     """
     Remove consecutive duplicate points.
@@ -54,8 +55,10 @@ def dedupe_ring(ring):
 
     return out
 
+
 def normalize_pt(pt):
     return (round(pt[0], 10), round(pt[1], 10))
+
 
 def close_ring(coords):
     """
@@ -66,6 +69,7 @@ def close_ring(coords):
     if coords[0] != coords[-1]:
         coords = coords + [coords[0]]
     return coords
+
 
 def get_outer_rings_from_multipolygon(multipolygon_coords):
     """
@@ -100,11 +104,13 @@ def polygon_area(polygon):
     holes = sum(abs(ring_area(hole)) for hole in polygon[1:] if hole)
     return outer - holes
 
+
 def multipolygon_area(multipolygon_coords):
     """
     Total area of all polygons in a MultiPolygon.
     """
     return sum(polygon_area(poly) for poly in multipolygon_coords if poly)
+
 
 def polygon_centroid(coords):
     """
@@ -158,12 +164,17 @@ def multipolygon_centroid(multipolygon_coords):
             weighted_cy += cy * area
 
     if total_area == 0:
-        centroids = [polygon_centroid(poly[0])[:2] for poly in multipolygon_coords if poly and poly[0]]
+        centroids = [
+            polygon_centroid(poly[0])[:2]
+            for poly in multipolygon_coords
+            if poly and poly[0]
+        ]
         xs = [c[0] for c in centroids]
         ys = [c[1] for c in centroids]
         return sum(xs) / len(xs), sum(ys) / len(ys)
 
     return weighted_cx / total_area, weighted_cy / total_area
+
 
 def multipolygon_bounds(multipolygon_coords):
     """
@@ -181,6 +192,7 @@ def multipolygon_bounds(multipolygon_coords):
         raise ValueError("Empty multipolygon coordinates")
 
     return min(xs), min(ys), max(xs), max(ys)
+
 
 def intersect_vertical(p1, p2, xcut):
     """
@@ -210,6 +222,7 @@ def intersect_horizontal(p1, p2, ycut):
     t = (ycut - y1) / (y2 - y1)
     x = x1 + t * (x2 - x1)
     return (x, ycut)
+
 
 def clip_ring_to_left_of_vertical(ring, xcut):
     """
@@ -271,6 +284,7 @@ def clip_ring_to_right_of_vertical(ring, xcut):
         return []
     return close_ring(output)
 
+
 def clip_ring_to_bottom_of_horizontal(ring, ycut):
     """
     Clip a ring to y <= ycut.
@@ -330,6 +344,7 @@ def clip_ring_to_top_of_horizontal(ring, ycut):
         return []
     return close_ring(output)
 
+
 def clip_polygon_left_of_vertical(polygon, xcut):
     """
     Clip a polygon (outer ring only) to x <= xcut.
@@ -373,6 +388,7 @@ def clip_polygon_top_of_horizontal(polygon, ycut):
         return []
     return [clipped_outer]
 
+
 def multipolygon_area_simple(multipolygon_coords):
     """
     Total area using only outer rings.
@@ -382,6 +398,7 @@ def multipolygon_area_simple(multipolygon_coords):
         if poly and poly[0]:
             total += abs(ring_area(poly[0]))
     return total
+
 
 def find_vertical_cut_for_half_area(multipolygon_coords, tol=1e-9, max_iter=80):
     """
@@ -448,6 +465,7 @@ def find_horizontal_cut_for_half_area(multipolygon_coords, tol=1e-9, max_iter=80
 
     return (low + high) / 2.0
 
+
 def split_multipolygon_into_two(multipolygon_coords):
     """
     Split into two approximately equal-area parts.
@@ -488,6 +506,7 @@ def split_multipolygon_into_two(multipolygon_coords):
                 top.append(tp)
 
         return bottom, top
+
 
 def split_multipolygon_into_n_equal_parts(multipolygon_coords, n):
     """
@@ -533,13 +552,15 @@ def point_in_polygon(x, y, polygon):
         x1, y1 = ring[i]
         x2, y2 = ring[i + 1]
 
-        intersects = ((y1 > y) != (y2 > y)) and \
-                     (x < (x2 - x1) * (y - y1) / (y2 - y1 + 1e-20) + x1)
+        intersects = ((y1 > y) != (y2 > y)) and (
+            x < (x2 - x1) * (y - y1) / (y2 - y1 + 1e-20) + x1
+        )
 
         if intersects:
             inside = not inside
 
     return inside
+
 
 def ensure_centroid_inside_zone(cx, cy, zone_outer_ring):
     if point_in_polygon((cx, cy), zone_outer_ring):
@@ -552,7 +573,6 @@ def ensure_centroid_inside_zone(cx, cy, zone_outer_ring):
 
     # final fallback: original centroid
     return cx, cy
-
 
 
 def point_in_multipolygon(x, y, multipolygon_coords):
