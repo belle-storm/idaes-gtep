@@ -70,6 +70,20 @@ def gen_by_area(gen_data):
     return gen_areas
 
 
+def collect_unit_types_total(gen_data):
+    unit_types = {}
+
+    for gen, gen_info in gen_data.items():
+        unit_type = gen_info.get("unit_type", "Unknown")
+        if unit_type != "Unknown" and unit_type not in unit_types.keys():
+            # create the starting base
+            unit_types[unit_type] = 0
+        capacity = gen_info.get("p_max", 0)
+        unit_types[unit_type] += capacity
+
+    return unit_types
+
+
 def adjust_bus_zone(filt_zones, countries):
     # if there is more than one bus in a zone,
     # check if there are empty zones in that country
@@ -227,6 +241,14 @@ def make_branches(ac_branch_data, dc_branch_data, buses):
             b.associate_bus(buses, info["from_bus"], info["to_bus"])
             branch_list.append(b)
     return branch_list
+
+
+def collect_unit_by_zone(filt_zones, percent=True):
+    zone_units = {}
+    for zone in filt_zones.values():
+        zone.collect_unit_types(percent)
+        zone_units[zone] = zone.unit_types
+    return zone_units
 
 
 def plot_zones_and_buses_mapbox(
@@ -488,6 +510,61 @@ def plot_renewable_percentage_map(zone_data, map_style="open-street-map", percen
     fig.show()
 
 
+def plot_fuel_pie(capacity_by_type, title=None):
+    total_capacity = sum(capacity_by_type.values())
+
+    fig = go.Figure(
+        data=[
+            go.Pie(
+                labels=list(capacity_by_type.keys()),
+                values=list(capacity_by_type.values()),
+                textinfo="label+percent",
+                hovertemplate=("%{label}: %{value} MW<br>" "%{percent}<extra></extra>"),
+            )
+        ]
+    )
+    if title is None:
+        title = f"Distribution of Generation Capacity by Unit Type (Total: {total_capacity} MW)"
+
+    fig.update_layout(title=title)
+    fig.show()
+
+
+def plot_fuel_by_zone(zone_units, percent=True):
+    # Get all zones and all unit types
+    zones = sorted(zone_units.keys())
+    all_unit_types = sorted(
+        {unit_type for counts in zone_units.values() for unit_type in counts.keys()}
+    )
+
+    fig = go.Figure()
+
+    for unit_type in all_unit_types:
+        values = [zone_units[zone].get(unit_type, 0) for zone in zones]
+
+        fig.add_trace(
+            go.Bar(
+                x=zones,
+                y=values,
+                name=unit_type,
+            )
+        )
+
+    yaxis_title = "Generation Capacity (MW) by Unit Type"
+    if percent:
+        yaxis_title = "Percent of Generation Capacity (MW) by Unit Type"
+
+    fig.update_layout(
+        barmode="stack",
+        title="Distribution of Capacity by Zone and Unit Type",
+        xaxis_title="Zone",
+        yaxis_title=yaxis_title,
+        legend_title="Unit Type",
+    )
+
+    fig.show()
+
+
 def run_grid_location_workflow(geojson_path=None, percent=True):
     if geojson_path is None:
         geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
@@ -507,6 +584,23 @@ def run_grid_location_workflow(geojson_path=None, percent=True):
     plot_zones_and_buses_mapbox(filtered_zones, branch_data)
     plot_renewable_percentage_map(filtered_zones)
     pass
+
+
+def run_unit_type_plotting_workflow(gen_data, plot_type="pie", percent=True):
+    VALID_PLOT_TYPE = ["pie", "bar"]
+    if plot_type.lower() not in VALID_PLOT_TYPE:
+        raise KeyError(
+            f"invalid plot type input: {plot_type}. Please select one of the following: {VALID_PLOT_TYPE}"
+        )
+
+    if plot_type == "pie":
+        # plot total unit type distribution
+        unit_types = collect_unit_types_total(gen_data)
+        plot_fuel_pie(unit_types)
+    elif plot_type == "bar":
+        # plot unit types by zone
+        zone_units = collect_unit_by_zone(gen_data, percent)
+        plot_fuel_by_zone(zone_units, percent)
 
 
 if __name__ == "__main__":

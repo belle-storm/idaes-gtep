@@ -278,6 +278,20 @@ class Zone:
         for bus, pt in zip(bus_list, points):
             bus.coordinates = pt
 
+    def collect_unit_types(self, percent=True):
+        zone_units = {}
+        zone_capacity = {}
+        for gen in self.generators:
+            unit_type = gen.unit_type
+            capacity = gen.capacity
+            if unit_type not in self.unit_types.keys():
+                self.unit_types[unit_type] = 0
+                # add unit type capacity
+                gen_cap = capacity
+                if percent:
+                    gen_cap = 100.0 * capacity / self.capacity
+                self.fuel_types += gen_cap
+
 
 class Bus:
     def __init__(self, name, countryKey, zoneName):
