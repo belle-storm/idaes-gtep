@@ -6,6 +6,7 @@ from gtep.nc_data_importer.zones import Zone, Bus, Branch, Generator
 
 
 def load_zones(geojson_path, match_naming=True, zone_name_key="zoneName"):
+    # load zones from the GeoJson file and save as a Zone object
     geojson_data = geo.retrieve_zone_loc_data(geojson_path)
     zone_data = {}
     for zone in geojson_data:
@@ -26,6 +27,7 @@ def load_zones(geojson_path, match_naming=True, zone_name_key="zoneName"):
         zone_data[name] = zObj
         # save location data to Zone object
         zone_data[name].load_location_data(zone)
+        # calculate the main centroid of the zone
         zObj.calculate_centroid()
 
     return zone_data
@@ -35,16 +37,20 @@ def bus_by_area(bus_data):
     # grab the bus in each area
     bus_areas = {}
     countries = []
+    all_buses = {}
     for bus_name, bus_dict in bus_data.items():
         country = bus_dict["zone"]
-        area = bus_name.split(" ")[0]
-        if area not in bus_areas.keys():
-            bus_areas[area] = []
+        area = bus_dict["area"]
+        if not isinstance(area, str):
+            area = bus_name.split(" ")[0]
         countries.append(country)
-        bus_areas[area].append(Bus(bus_name, country, area))
+        bus = Bus(bus_name, country, area)
+        if bus not in bus_areas.keys():
+            bus_areas[bus] = area
+        all_buses[bus_name] = bus
     countries = set(countries)
 
-    return countries, bus_areas
+    return countries, bus_areas, all_buses
 
 
 def gen_by_area(gen_data):
@@ -91,6 +97,8 @@ def adjust_bus_zone(filt_zones, countries):
     # iterate through this until zone only has 1
     # or until all zones in that country are filled
     # combine zones into countries
+    moved_buses = []
+
     for country in countries:
         zones = {}
         # grab all the zones in this country
@@ -107,14 +115,18 @@ def adjust_bus_zone(filt_zones, countries):
                     if no:
                         no_bus_zone = no[-1]
                         no_bus_zone.buses.append(bus)
+                        moved_buses.append(bus.name)
+                        bus.mappedZone = no_bus_zone
                         # remove from their original lists
                         no.pop()
                         zn.buses.remove(bus)
+    return moved_buses
 
 
 def manually_adjust_zone_assignement(filt_zones):
     SE_buses = {}
     NO_buses = {}
+    moved_zones = []
     for name, zones in filt_zones.items():
         if zones.countryKey == "SE":
             for bus in zones.buses:
@@ -126,15 +138,20 @@ def manually_adjust_zone_assignement(filt_zones):
         if bus.name == "SE2 0":
             filt_zones["SE-SE4"].buses.append(bus)
             filt_zones[og_zone].buses.remove(bus)
+            moved_zones.append(bus.name)
+            bus.mappedZone = filt_zones["SE-SE4"]
     for bus, og_zone in NO_buses.items():
         if bus.name == "NO2 0":
             filt_zones["NO-NO3"].buses.append(bus)
             filt_zones[og_zone].buses.remove(bus)
+            moved_zones.append(bus.name)
+            bus.mappedZone = filt_zones["NO-NO3"]
+    return moved_zones
 
 
 def components_by_zone(zone_data, grid_data):
     # filter zones by matching countries and assign components to zone
-    country_list, bus_area = bus_by_area(grid_data["elements"]["bus"])
+    country_list, bus_area, all_buses = bus_by_area(grid_data["elements"]["bus"])
     gen_area = gen_by_area(grid_data["elements"]["generator"])
 
     # filter zones to include full countries even if no buses in that area
@@ -145,30 +162,60 @@ def components_by_zone(zone_data, grid_data):
 
     # save buses to their zones
     match_status = {i: False for i in bus_area.keys()}
+    directly_matched_bus = []
     for z in zone_data.keys():
-        for ix, Bus in bus_area.items():
-            if ix in z:
-                filt_zone[z].buses = bus_area[ix]
-                match_status[ix] = True
+        for Bus, area in bus_area.items():
+            if area in z:
+                filt_zone[z].buses.append(Bus)
+                Bus.mappedZone = filt_zone[z]
+                match_status[Bus] = True
+                directly_matched_bus.append(Bus.name)
         for g, Gen in gen_area.items():
             if g in z:
                 filt_zone[z].generators = gen_area[g]
     # catch stragglers and assign to any country zone that matches
-    for key, status in match_status.items():
+    updated_match_status = {}
+    buses_matched_to_country = []
+    for bus, status in match_status.items():
+        updated_match_status[bus] = status
         if not status:
-            new_key = key[:-1]
+            new_key = bus.countryKey
             for z in filt_zone.keys():
                 if new_key in z:
-                    filt_zone[z].buses.extend(bus_area[key])
+                    filt_zone[z].buses.append(bus)
+                    bus.mappedZone = filt_zone[z]
+                    buses_matched_to_country.append(bus.name)
                     # debug check that everything found a home
-                    match_status[key] = True
+                    updated_match_status[bus] = True
                     break
 
     # rework bus association
-    adjust_bus_zone(filt_zone, country_list)
-    manually_adjust_zone_assignement(filt_zone)
+    moved_buses = adjust_bus_zone(filt_zone, country_list)
+    moved_zones = manually_adjust_zone_assignement(filt_zone)
 
-    return filt_zone
+    # triple check all buses have been covered
+    match_buses = [b.name for b in match_status.keys()]
+    result = list(set(all_buses.keys()) ^ set(match_buses))
+
+    # return details
+    matches = {}
+
+    for Bus, status in match_status.items():
+        approach = "by_name"
+        if Bus.name in buses_matched_to_country:
+            approach = "by_country"
+        if Bus.name in moved_buses:
+            approach = "moved_to_empty_zone_in_country"
+        if Bus.name in moved_zones:
+            approach = "manually_placed_based_on_branch"
+
+        matches[Bus.name] = {
+            "status": status,
+            "mapped_zone": Bus.mappedZone.zoneName,
+            "mapping_approach": approach,
+        }
+
+    return filt_zone, matches
 
 
 def gen_capacity_by_zone(filt_zones):
@@ -570,7 +617,7 @@ def run_grid_location_workflow(geojson_path=None, percent=True):
         geojson_path = "/Users/bstorm/idaes-gtep/gtep/data/nc_data/bidding_zones_electricitymaps.geojson"
 
     zone_data = load_zones(geojson_path)
-    filtered_zones = components_by_zone(zone_data, grid_data)
+    filtered_zones, _ = components_by_zone(zone_data, grid_data)
     gen_capacity_by_zone(filtered_zones)
     assign_centroid_to_bus(filtered_zones)
     buses = grab_all_buses(filtered_zones)
@@ -582,7 +629,7 @@ def run_grid_location_workflow(geojson_path=None, percent=True):
         buses,
     )
     plot_zones_and_buses_mapbox(filtered_zones, branch_data)
-    plot_renewable_percentage_map(filtered_zones)
+    plot_renewable_percentage_map(filtered_zones, percent)
     pass
 
 

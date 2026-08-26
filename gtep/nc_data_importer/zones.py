@@ -8,6 +8,7 @@ class Zone:
         self.countryName = countryName
         self.type = None
         self.coordinates = None
+        self.full_zone_centroid = None
         self.centroid = {}  # to support section-based centroids
         self.buses = []
         self.generators = []
@@ -124,7 +125,7 @@ class Zone:
             cx, cy, _ = self.polygon_centroid(self.coordinates[0])
         elif self.type == "MultiPolygon":
             cx, cy = self.multipolygon_centroid(self.coordinates)
-
+        self.full_zone_centroid = (cx, cy)
         self.centroid[0] = (cx, cy)
 
     def centroids_for_parts(self, parts):
@@ -298,8 +299,10 @@ class Bus:
         self.name = name
         self.countryKey = countryKey
         self.zoneName = zoneName
+        self.mappedZone = None
         self.coordinates = None
         self.branches = []
+        self.generators = []
 
 
 class Branch:

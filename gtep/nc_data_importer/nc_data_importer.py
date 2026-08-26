@@ -162,7 +162,7 @@ class NCDataProvider:
             bus_name = str(row["Bus Name"])
             area = row["Area"]
             if pd.isna(area):
-                area = bus_name.split(' ')[0]
+                area = bus_name.split(" ")[0]
             bus_dict = {
                 "id": str(row["Bus ID"]),
                 "base_kv": float(row["BaseKV"]),
@@ -209,8 +209,8 @@ class NCDataProvider:
                 bus_name = str(row["bus"])
                 area = row["area"]
                 if np.isnan(area):
-                    area = bus_name.split(' ')[0]
-                    bus_areas.add(area) #make sure this is in the areas list
+                    area = bus_name.split(" ")[0]
+                    bus_areas.add(area)  # make sure this is in the areas list
                 # format load dictionaries
                 PD = {}
                 QD = {}
