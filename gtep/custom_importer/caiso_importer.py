@@ -5,6 +5,7 @@ from datetime import datetime
 
 class CAISOimporter(CustomImporter):
     def __init__(self, options=None):
+        options["data_name"] = "CAISO"
         super().__init__(options)
 
     def _read_simulation_obj(self, dir: str) -> pd.DataFrame:

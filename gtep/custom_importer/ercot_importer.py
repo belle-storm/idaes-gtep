@@ -5,6 +5,8 @@ from datetime import datetime
 
 class ERCOTimporter(CustomImporter):
     def __init__(self, options=None):
+        options["data_name"] = "ERCOT"
+
         super().__init__(options)
 
     def _read_simulation_obj(self, dir: str) -> pd.DataFrame:
