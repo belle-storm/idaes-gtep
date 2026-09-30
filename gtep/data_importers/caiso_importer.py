@@ -456,3 +456,17 @@ class CAISOimporter(CustomImporter):
         return time_keys
         """
         pass
+
+    def populate_model(self, options):
+        pass
+
+    def populate_with_actuals(self, options, model):
+        pass
+
+    def set_heat_rates(self, model, data_path=None):
+        # If heat rates are not naturally included in the data, it must be applied.
+        # Units should be in MMBTU/MWh.
+
+        for gen in model.data["elements"]["generator"]:
+            if "heat_rate" not in self.md.data["elements"]["generator"][gen]:
+                model.data["elements"]["generator"][gen]["heat_rate"] = 0
