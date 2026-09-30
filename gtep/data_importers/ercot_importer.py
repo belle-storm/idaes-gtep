@@ -1,6 +1,8 @@
 from gtep.data_importers.data_skeleton import CustomImporter
 import pandas as pd
 from datetime import datetime
+import os
+import numpy as np
 
 
 class ERCOTimporter(CustomImporter):
@@ -33,15 +35,61 @@ class ERCOTimporter(CustomImporter):
         :return: Start and end datetimes.
         :rtype: tuple[datetime, datetime]
         """
-        data_start = pd.to_datetime(metadata_df.loc["Date_From", time_type])
-        data_end = pd.to_datetime(metadata_df.loc["Date_To", time_type])
-
-        return data_start, data_end
+        pass
 
     def _read_buses(
         self, base_dir: str, elements: dict[str, any], system: dict[str, any]
     ) -> None:
         """Read bus and loads data and save that data to the model elements."""
+        # look for the target bus data file
+        file_path = os.path.join(
+            base_dir, "ercot_settlement_point_electrical_bus_mapping.csv"
+        )
+        if not os.path.exists(file_path):
+            raise ValueError(f'ERCOT Bus Data File "{file_path}" does not exist')
+        bus_df = pd.read_csv(file_path)
+
+        # iterate through the bus data
+        bus_areas = set()
+        for idx, row in bus_df.iterrows():
+
+            bus_name = str(row["electrical_bus"])
+            area = row["substation"]
+
+            bus_dict = {
+                "id": str(row["Bus ID"]),
+                "base_kv": float(row["voltage_level"]),
+                "matpower_bustype": row["Bus Type"],
+                "vm": np.nan,  # TODO for now until importing a supplemental dataset (shouldn't throw an error though)
+                "va": np.nan,  # TODO for now until importing a supplemental dataset (shouldn't throw an error though)
+                "v_min": 0.95,
+                "v_max": 1.05,
+                "area": str(row["substation"]),
+                "zone": str(row["settlement_load_zone"]),
+                # extra data
+                "resource_node": str(row["resource_node"]),
+                "node_name": str(row["node_name"]),
+                "hub_bus_name": str(row["hub_bus_name"]),
+                "hub": str(row["hub"]),
+                "psse_bus_number": str(row["psse_bus_number"]),
+                "psse_bus_name": str(row["psse_bus_name"]),
+            }
+            # check the base_kv follows rules
+            if bus_dict["base_kv"] <= 0:
+                raise ValueError(
+                    f'BaseKV value for bus "{bus_name}" is <= 0. Not supported.'
+                )
+
+            # save this bus
+            bus_areas.add(bus_dict["area"])
+            elements["bus"][bus_name] = bus_dict
+
+        # add filler values for reference buses
+        system["reference_bus"] = None
+        system["reference_bus_angle"] = 0
+
+        # add the areas
+        elements["area"] = {name: dict() for name in bus_areas}
 
         """
         BUS DATA
@@ -204,6 +252,54 @@ class ERCOTimporter(CustomImporter):
 
     def _read_generators(self, base_dir: str, elements: dict[str, any]) -> None:
         """Read generator data."""
+        RENEWABLE_TYPES = ["GEO", "PV", "WIND", "ROR", "HYDRO", "RTPV"]
+        FUEL_ASSIGNMENT = {  # TODO Check these assignments
+            "HYDRO": "H",
+            "SCLE90": "S",
+            "GSNONR": "O",
+            "CCGT90": "G",
+            "GSREH": "GEO",
+            "WIND": "W",
+            "SCGT90": "S",
+            "RENEW": "S",
+            "CCLE90": "G",
+            "CLLIG": "C",
+        }
+
+        file_path = os.path.join(base_dir, "ercot_gen_resources.csv")
+        if os.path.exists(file_path):
+
+            gen_df = pd.read_csv(file_path)
+
+            for idx, row in gen_df.iterrows():
+
+                name = str(row["resource_name"])
+                settlement_point = str(row["settlement_point_name"])
+                resource_type = str(row["resource_type"])
+                in_service_flag = True
+                if "-c" in name:
+                    in_service_flag = False
+                gen_dict = {
+                    "bus": bus_name,
+                    "in_service": in_service_flag,
+                    "mbase": 100.0,
+                    "pg": float(row["MW Inj"]),
+                    "qg": float(row["MVAR Inj"]),
+                    "p_min": float(row["PMin MW"]),
+                    "p_max": float(row["PMax MW"]),
+                    "q_min": float(row["QMin MVAR"]),
+                    "q_max": float(row["QMax MVAR"]),
+                    "ramp_q": float(row["Ramp Rate MW/Min"]),
+                    "fuel": FUEL_ASSIGNMENT[resource_type],
+                    "unit_type": resource_type,
+                    "area": elements["bus"][bus_name]["area"],
+                    "zone": settlement_point,
+                    # extra
+                    "investment_cost": float(row["capital_cost"]),
+                }
+
+                gen_dict["p_fuel"] = {}
+                gen_dict["p_cost"] = {}
         """
         GENERATOR DATA
         

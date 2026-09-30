@@ -28,6 +28,28 @@ import pandas as pd
 import numpy as np
 from math import isnan
 
+CARRIER_ASSIGN = {
+    "CCGT": {"unit_type": "CC", "fuel": "G"},
+    "biomass": {"unit_type": "BIO", "fuel": "B"},
+    "oil": {
+        "unit_type": "OIL",
+        "fuel": "O",
+    },  # NOTE if breaks set to Unit type CT, fuel to G
+    "waste": {"unit_type": "LFILL", "fuel": "G"},
+    "lignite": {"unit_type": "COAL", "fuel": "C"},
+    "nuclear": {"unit_type": "NUC", "fuel": "N"},
+    "OCGT": {"unit_type": "OGS", "fuel": "G"},
+    "geothermal": {"unit_type": "GEO", "fuel": "GEO"},
+    "coal": {"unit_type": "COAL", "fuel": "C"},
+    "solar": {"unit_type": "PV", "fuel": "S"},
+    "solar-hsat": {"unit_type": "PV", "fuel": "S"},
+    "offwind-ac": {"unit_type": "WIND", "fuel": "W"},
+    "offwind-float": {"unit_type": "WIND", "fuel": "W"},
+    "offwind-dc": {"unit_type": "WIND", "fuel": "W"},
+    "onwind": {"unit_type": "WIND", "fuel": "W"},
+    "ror": {"unit_type": "ROR", "fuel": "H"},
+}
+
 
 class CustomImporter(ABC):
     def __init__(self, options: dict[str, any] = None) -> None:
