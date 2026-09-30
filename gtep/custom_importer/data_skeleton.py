@@ -46,9 +46,14 @@ class CustomImporter(ABC):
         if "num_days" in options.keys():
             end_time = self._start_time + timedelta(days=options["num_days"])
         self._end_time = end_time
+        # check if a data name is in options
+        data_name = "custom_import"
+        if "data_name" in options.keys():
+            data_name = options["data_name"]
 
         self._cache = self.parse_to_cache(
             options["data_path"],
+            data_name,
             self._start_time,
             self._end_time,
         )
@@ -552,6 +557,7 @@ class CustomImporter(ABC):
     def parse_to_cache(
         self,
         data_dir: str,
+        data_name: str,
         begin_time: datetime,
         end_time: datetime,
     ) -> dict[str, any]:
@@ -570,7 +576,7 @@ class CustomImporter(ABC):
         """
 
         # Create the skeleton with data
-        self.model_data = self.create_skeleton(data_dir)
+        self.model_data = self.create_skeleton(data_name)
 
         # Save the data frequencies
         metadata_df = self._read_simulation_obj(data_dir)
