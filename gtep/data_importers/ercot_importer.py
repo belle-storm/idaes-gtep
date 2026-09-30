@@ -554,10 +554,12 @@ class ERCOTimporter(CustomImporter):
         """
         pass
 
-    def populate_model(self, options):
+    def populate_model(self, options=None):
+        # this is already populated when data is imported so this step can be skipped
         pass
 
     def populate_with_actuals(self, options, model):
+        # this is already populated when data is imported so this step can be skipped
         pass
 
     def set_heat_rates(self, model, data_path=None):
