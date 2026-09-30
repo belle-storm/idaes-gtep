@@ -1,4 +1,4 @@
-from gtep.custom_importer.data_skeleton import CustomImporter
+from gtep.data_importers.data_skeleton import CustomImporter
 import pandas as pd
 from datetime import datetime
 

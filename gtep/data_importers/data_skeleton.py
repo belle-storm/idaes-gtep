@@ -1,14 +1,64 @@
-from gtep.custom_importer.data_skeleton import CustomImporter
+#################################################################################
+# The Institute for the Design of Advanced Energy Systems Integrated Platform
+# Framework (IDAES IP) was produced under the DOE Institute for the
+# Design of Advanced Energy Systems (IDAES).
+#
+# Copyright (c) 2018-2026 by the software owners: The Regents of the
+# University of California, through Lawrence Berkeley National Laboratory,
+# National Technology & Engineering Solutions of Sandia, LLC, Carnegie Mellon
+# University, West Virginia University Research Corporation, et al.
+# All rights reserved.  Please see the files COPYRIGHT.md and LICENSE.md
+# for full copyright and license information.
+#################################################################################
+
+"""GTEP Data Skeleton.
+
+This module provides helper functions for a GTEP-friendly data skeleton
+to support expandable data importers.
+
+:module: data_skeleton
+:author: bstorm
+"""
+
+import egret.data.model_data as md
+from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
+import os
 import pandas as pd
-from datetime import datetime
+import numpy as np
+from math import isnan
 
 
-class ERCOTimporter(CustomImporter):
-    def __init__(self, options=None):
-        options["data_name"] = "ERCOT"
+class CustomImporter(ABC):
+    def __init__(self, options: dict[str, any] = None) -> None:
+        """Initialize the provider."""
+        # check for the NC data files
+        if not os.path.exists(options["data_path"]):
+            raise ValueError(
+                f'NC Data directory "{options["data_path"]}" does not exist'
+            )
 
-        super().__init__(options)
+        # grab the start and end data times
+        self.metadata_df = self._read_simulation_obj(options["data_path"])
+        self._start_time, end_time = self._get_data_date_range(self.metadata_df)
 
+        # check if there is a num_days key
+        if "num_days" in options.keys():
+            end_time = self._start_time + timedelta(days=options["num_days"])
+        self._end_time = end_time
+        # check if a data name is in options
+        data_name = "custom_import"
+        if "data_name" in options.keys():
+            data_name = options["data_name"]
+
+        self._cache = self.parse_to_cache(
+            options["data_path"],
+            data_name,
+            self._start_time,
+            self._end_time,
+        )
+
+    @abstractmethod
     def _read_simulation_obj(self, dir: str) -> pd.DataFrame:
         """Read simulation object metadata to contain the metadata about
         the data
@@ -18,7 +68,9 @@ class ERCOTimporter(CustomImporter):
         :return: Simulation object metadata.
         :rtype: pandas.DataFrame
         """
-
+        self.period_per_step = None
+        self.total_num_steps = None
+        self.num_days = None
         pass
 
     def _get_data_date_range(
@@ -38,6 +90,48 @@ class ERCOTimporter(CustomImporter):
 
         return data_start, data_end
 
+    @staticmethod
+    def _build_system(system: dict[str, any], name=None) -> None:
+        """Populate the system section of the skeleton."""
+        system["name"] = name
+        system["baseMVA"] = None
+        system["reference_bus"] = None
+        system["reference_bus_angle"] = None
+        system["time_period_length_minutes"] = None
+        system["time_keys"] = []
+        system["min_operating_reserve"] = None
+        system["min_spinning_reserve"] = None
+
+    @staticmethod
+    def _build_elements(elements: dict[str, any]) -> None:
+        """Populate the elements section of the skeleton."""
+        elements["bus"] = {}
+        elements["load"] = {}
+        elements["shunt"] = {}
+
+        elements["branch"] = {}
+        elements["dc_branch"] = {}
+
+        elements["generator"] = {}
+
+        elements["storage"] = {}
+
+    def create_skeleton(self, data_type_name) -> dict[str, any]:
+        """Create an empty model data skeleton.
+
+        :return: Empty model data dictionary.
+        :rtype: dict[str, Any]
+        """
+        model_data = md.ModelData.empty_model_data_dict()
+        elements = model_data["elements"]
+        system = model_data["system"]
+
+        self._build_elements(elements)
+        self._build_system(system, data_type_name)
+
+        return model_data
+
+    @abstractmethod
     def _read_buses(
         self, base_dir: str, elements: dict[str, any], system: dict[str, any]
     ) -> None:
@@ -130,6 +224,7 @@ class ERCOTimporter(CustomImporter):
         """
         pass
 
+    @abstractmethod
     def _read_branches(self, base_dir: str, elements: dict[str, any]) -> None:
         """Read AC and DC branch data."""
         """
@@ -202,6 +297,7 @@ class ERCOTimporter(CustomImporter):
         """
         pass
 
+    @abstractmethod
     def _read_generators(self, base_dir: str, elements: dict[str, any]) -> None:
         """Read generator data."""
         """
@@ -379,6 +475,7 @@ class ERCOTimporter(CustomImporter):
         """
         pass
 
+    @abstractmethod
     def _read_storage(self, base_dir: str, elements: dict[str, any]) -> None:
         """Read storage data."""
         """
@@ -421,6 +518,7 @@ class ERCOTimporter(CustomImporter):
         """
         pass
 
+    @abstractmethod
     def _read_timeseries_data(
         self,
         system: dict[str, any],
@@ -457,3 +555,62 @@ class ERCOTimporter(CustomImporter):
         return time_keys
         """
         pass
+
+    def parse_to_cache(
+        self,
+        data_dir: str,
+        data_name: str,
+        begin_time: datetime,
+        end_time: datetime,
+    ) -> dict[str, any]:
+        """Parse data in GTEP-friendly format.
+
+        Only the portions between ``begin_time`` and ``end_time`` are retained.
+
+        :param data_dir: Directory containing the NC data files.
+        :type data_dir: str
+        :param begin_time: Start of the desired time window.
+        :type begin_time: datetime.datetime
+        :param end_time: End of the desired time window.
+        :type end_time: datetime.datetime
+        :return: Parsed model data cache.
+        :rtype: dict[str, Any]
+        """
+
+        # Create the skeleton with data
+        self.model_data = self.create_skeleton(data_name)
+
+        # Save the data frequencies
+        metadata_df = self._read_simulation_obj(data_dir)
+        minutes_per_period = {
+            "REAL TIME": int(metadata_df.loc["Period Resolution", "REAL TIME"]) // 60,
+        }
+
+        self._read_timeseries_data(
+            self.model_data["system"],
+            data_dir,
+            begin_time,
+            end_time,
+            minutes_per_period,
+        )
+        # add defaults
+        self.model_data["system"]["min_operating_reserve"] = 0.1
+        self.model_data["system"]["min_spinning_reserve"] = 0.1
+
+        return self.model_data
+
+    @abstractmethod
+    def populate_model(self, options):
+        pass
+
+    @abstractmethod
+    def populate_with_actuals(self, options, model):
+        pass
+
+    def set_heat_rates(self, model, data_path=None):
+        # If heat rates are not naturally included in the data, it must be applied.
+        # Units should be in MMBTU/MWh.
+
+        for gen in model.data["elements"]["generator"]:
+            if "heat_rate" not in self.md.data["elements"]["generator"][gen]:
+                model.data["elements"]["generator"][gen]["heat_rate"] = 0
