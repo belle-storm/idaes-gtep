@@ -13,7 +13,7 @@
 
 """GTEP Data Skeleton.
 
-This module provides helper functions for a GTEP-friendly data skeleton 
+This module provides helper functions for a GTEP-friendly data skeleton
 to support expandable data importers.
 
 :module: data_skeleton
@@ -29,7 +29,6 @@ import numpy as np
 from math import isnan
 
 
-
 class CustomImporter(ABC):
     def __init__(self, options: dict[str, any] = None) -> None:
         """Initialize the provider."""
@@ -38,16 +37,16 @@ class CustomImporter(ABC):
             raise ValueError(
                 f'NC Data directory "{options["data_path"]}" does not exist'
             )
-    
+
         # grab the start and end data times
         self.metadata_df = self._read_simulation_obj(options["data_path"])
         self._start_time, end_time = self._get_data_date_range(self.metadata_df)
-    
+
         # check if there is a num_days key
         if "num_days" in options.keys():
             end_time = self._start_time + timedelta(days=options["num_days"])
         self._end_time = end_time
-    
+
         self._cache = self.parse_to_cache(
             options["data_path"],
             self._start_time,
@@ -68,7 +67,9 @@ class CustomImporter(ABC):
         pass
 
     def _get_data_date_range(
-        self, metadata_df: pd.DataFrame, time_type:str="REAL TIME",
+        self,
+        metadata_df: pd.DataFrame,
+        time_type: str = "REAL TIME",
     ) -> tuple[datetime, datetime]:
         """Get the start and end datetimes from metadata.
 
@@ -107,7 +108,6 @@ class CustomImporter(ABC):
         elements["generator"] = {}
 
         elements["storage"] = {}
-
 
     def create_skeleton(self, data_type_name) -> dict[str, any]:
         """Create an empty model data skeleton.
@@ -570,7 +570,7 @@ class CustomImporter(ABC):
         """
 
         # Create the skeleton with data
-        model_data = self.create_skeleton(data_dir)
+        self.model_data = self.create_skeleton(data_dir)
 
         # Save the data frequencies
         metadata_df = self._read_simulation_obj(data_dir)
@@ -579,10 +579,14 @@ class CustomImporter(ABC):
         }
 
         self._read_timeseries_data(
-            model_data["system"], data_dir, begin_time, end_time, minutes_per_period
+            self.model_data["system"],
+            data_dir,
+            begin_time,
+            end_time,
+            minutes_per_period,
         )
         # add defaults
-        model_data["system"]["min_operating_reserve"] = 0.1
-        model_data["system"]["min_spinning_reserve"] = 0.1
+        self.model_data["system"]["min_operating_reserve"] = 0.1
+        self.model_data["system"]["min_spinning_reserve"] = 0.1
 
-        return model_data
+        return self.model_data
